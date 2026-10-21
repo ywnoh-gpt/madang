@@ -124,6 +124,37 @@ class BrowserWorkflow(unittest.TestCase):
             self.assertFalse(errors)
             page.close()
 
+    def test_03_key_registration_and_explicit_live_vs_simulated_diagnostics(self):
+        page=self.new_page()
+        errors=[]
+        page.on('pageerror',lambda e:errors.append(str(e)))
+        page.goto(self.base)
+        expect(page.locator('#connection')).to_contain_text('연결됨')
+        before=self.inspect()
+        page.locator('#connectionSetup summary').click()
+        page.locator('#apiKeyInput').fill('browser-fixture-not-a-real-key')
+        page.locator('#storeApiKey').click()
+        expect(page.locator('#diagnosticMessage')).to_contain_text('키를 저장했습니다')
+        expect(page.locator('#apiKeyInput')).to_have_value('')
+        assert 'browser-fixture-not-a-real-key' not in page.locator('body').inner_text()
+        page.locator('#simulatedCheck').click()
+        expect(page.locator('#diagnosticMessage')).to_contain_text('[모의 점검]')
+        expect(page.locator('#diagnosticChecks li')).to_have_count(7)
+        page.locator('#checkApi').click()
+        expect(page.locator('#diagnosticMessage')).to_contain_text('[실제 API]')
+        expect(page.locator('#diagnosticMessage')).to_contain_text('점검 응답을 확인')
+        page.locator('#liveSample').click()
+        expect(page.locator('#diagnosticChecks li')).to_have_count(5)
+        expect(page.locator('#diagnosticMessage')).to_contain_text('[실제 API]')
+        self.assertNotIn('error',page.locator('#diagnosticMessage').get_attribute('class'))
+        after=self.inspect()
+        self.assertEqual(len(before['state']['records']),len(after['state']['records']))
+        self.assertEqual(before['archived'],after['archived'])
+        self.assertEqual(len(before['audit']),len(after['audit']))
+        page.screenshot(path=str(self.artifacts/'connection-diagnostics.png'),full_page=True)
+        self.assertFalse(errors)
+        page.close()
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

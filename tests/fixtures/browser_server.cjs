@@ -6,10 +6,20 @@ const path = require('node:path');
 const {createRuntime} = require('./gas_runtime.cjs');
 const runtime = createRuntime();
 runtime.props.GEMINI_API_KEY = 'mock-test-key-not-a-credential';
-runtime.setFetch({status:200,body:{candidates:[{content:{parts:[{text:JSON.stringify({
+const extractionFixture={status:200,body:{candidates:[{content:{parts:[{text:JSON.stringify({
   fields:{court:'서울중앙지방법원',caseNumber:'2026타경123',itemNumber:'1',address:'서울시 합성 테스트 물건',propertyType:'근린시설',area:'84.5',auctionDate:'2026-11-10',appraisal:'2억원',minimumPrice:'1억 2300만원',failedAuctions:'1',saleResult:'미확인',actualPrice:null,bidderCount:null,predictedPrice:'999999999'},
   confidence:{court:'high',caseNumber:'high',itemNumber:'medium',minimumPrice:'low',propertyType:'high'},warnings:['자료별 매각기일과 최저가 단위를 원본과 대조하세요.']
-})}]}}]}});
+})}]}}]}};
+const fetchFixture=runtime.ctx.UrlFetchApp.fetch;
+runtime.ctx.UrlFetchApp.fetch=(url,options)=>{
+  const parts=JSON.parse(options.payload).contents[0].parts;
+  if(parts.length===1&&parts[0].text.includes('madang_connection_ok')){
+    runtime.setFetch({status:200,body:{candidates:[{content:{parts:[{text:'{"status":"madang_connection_ok"}'}]}}]}});
+  }else if(parts.some(part=>part.inlineData?.mimeType==='application/pdf'&&Buffer.from(part.inlineData.data,'base64').includes(Buffer.from('2030-TEST-42')))){
+    runtime.setFetch({status:200,body:{candidates:[{content:{parts:[{text:JSON.stringify({fields:{court:'Seoul Central District Court',caseNumber:'2030-TEST-42',itemNumber:'1',auctionDate:'2030-10-22',appraisal:'200000000',minimumPrice:'140000000'},confidence:{},warnings:[]})}]}}]}});
+  }else runtime.setFetch(extractionFixture);
+  return fetchFixture(url,options);
+};
 const bridge = `
 window.google = {script:{run: runner()}};
 function runner(success, failure) {
@@ -23,7 +33,7 @@ function runner(success, failure) {
     };
   }});
 }`;
-const allowed = new Set(['setupJournal','getAppState','extractDocuments','extractScreenshot','saveReviewedRecord','updateResult','refreshJournal']);
+const allowed = new Set(['setupJournal','getAppState','extractDocuments','extractScreenshot','saveReviewedRecord','updateResult','refreshJournal','getSetupStatus','saveApiKey','checkGeminiConnection','runSampleCheck','runLocalSelfCheck']);
 const server = http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.method==='GET'&&req.url==='/'){

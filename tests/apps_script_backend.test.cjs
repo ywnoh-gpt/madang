@@ -79,3 +79,35 @@ test('human correction of a hallucinated visible result requires explicit overri
   assert.throws(()=>save(e,{}, {draftId:draft.draftId,resultVisibilityCorrected:true}),/수정 사유/);
   const saved=save(e,{}, {draftId:draft.draftId,resultVisibilityCorrected:true,correctionReason:'LLM이 최저가를 실제 낙찰가로 오독했습니다. 원본에는 낙찰 결과가 없습니다.'});assert.equal(saved.record.beforeResultConfirmed,true);assert.match(e.sheets['마당 변경 이력'].rows[2][4],/resultVisibilityCorrected/);assert.match(e.sheets['마당 변경 이력'].rows[2][3],/1억원/);
 });
+
+test('setup diagnostics distinguish OAuth, configured sheets and key presence without returning credentials',()=>{
+  const e=environment();let status=e.ctx.getSetupStatus();assert.equal(status.configured,false);assert.equal(status.keyPresent,false);assert.match(status.oauthNote,/대신하지 않습니다/);
+  assert.throws(()=>e.ctx.saveApiKey(''),/유효한/);assert.throws(()=>e.ctx.saveApiKey('two words'),/유효한/);assert.throws(()=>e.ctx.saveApiKey({key:'fixture'}),/텍스트/);
+  const fixtureKey='opaque-test-fixture';status=e.ctx.saveApiKey(fixtureKey);assert.equal(status.keyPresent,true);assert.equal(JSON.stringify(status).includes(fixtureKey),false);
+  e.ctx.setupJournal();e.ctx.ScriptApp={AuthMode:{FULL:'FULL'},getAuthorizationInfo:()=>({getAuthorizationStatus:()=> 'REQUIRED',getAuthorizationUrl:()=> 'https://accounts.google.com/o/oauth2/auth?fixture'})};
+  status=e.ctx.getSetupStatus();assert.equal(status.configured,true);assert.equal(status.authorization.status,'REQUIRED');assert.match(status.authorization.url,/accounts.google.com/);
+  assert.equal(JSON.stringify(status).includes(fixtureKey),false);
+});
+
+test('Gemini connection check verifies an actual marker and keeps failures redacted',()=>{
+  const e=environment();let result=e.ctx.checkGeminiConnection();assert.equal(result.mode,'live');assert.equal(result.ok,false);assert.equal(result.status,'MISSING_KEY');assert.equal(e.getFetch(),undefined);
+  e.ctx.saveApiKey('fixture-credential');e.setFetch({status:200,body:{candidates:[{content:{parts:[{text:'{"status":"madang_connection_ok"}'}]}}]}});
+  result=e.ctx.checkGeminiConnection();assert.equal(result.ok,true);assert.equal(result.status,'CONNECTED');assert.equal(JSON.stringify(result).includes('fixture-credential'),false);
+  assert.equal(e.getFetch().url.includes('fixture-credential'),false);assert.equal(e.getFetch().headers['x-goog-api-key'],'fixture-credential');
+  assert.equal(e.getFetch().followRedirects,false);
+  e.setFetch({status:429,body:{error:{message:'fixture-credential private error body'}}});result=e.ctx.checkGeminiConnection();assert.equal(result.ok,false);assert.equal(result.status,'HTTP_429');assert.match(result.message,/사용량 한도/);assert.equal(JSON.stringify(result).includes('private error body'),false);
+  e.ctx.UrlFetchApp.fetch=()=>{throw new Error('fixture-credential raw proxy details');};result=e.ctx.checkGeminiConnection();assert.equal(result.status,'NETWORK_ERROR');assert.equal(JSON.stringify(result).includes('fixture-credential'),false);
+});
+
+test('sample PDF live extraction checks known facts without adding records or Drive files',()=>{
+  const e=environment();e.ctx.setupJournal();e.ctx.saveApiKey('fixture-key');const expected={court:'Seoul Central District Court',caseNumber:'2030-TEST-42',itemNumber:'1',auctionDate:'2030-10-22',appraisal:'200000000',minimumPrice:'140000000'};
+  e.setFetch({status:200,body:{candidates:[{content:{parts:[{text:JSON.stringify({fields:expected,confidence:{caseNumber:'high'},warnings:[]})}]}}]}});
+  const result=e.ctx.runSampleCheck();assert.equal(result.mode,'live');assert.equal(result.ok,true);assert.equal(result.checks.length,5);assert.equal(e.ctx.getAppState().records.length,0);assert.equal(e.sheets['마당 변경 이력'].rows.length,2);assert.equal(e.getArchiveCount(),0);
+  const parts=JSON.parse(e.getFetch().payload).contents[0].parts;const pdf=Buffer.from(parts[2].inlineData.data,'base64').toString('ascii');assert.match(pdf,/^%PDF-1\.4/);assert.match(pdf,/2030-TEST-42/);
+  const xref=Number(pdf.match(/startxref\n(\d+)/)[1]);assert.equal(pdf.slice(xref,xref+4),'xref');assert.match(pdf,/Minimum price: 140000000 KRW/);
+  e.setFetch({status:200,body:{candidates:[{content:{parts:[{text:JSON.stringify({fields:{...expected,minimumPrice:'14000000'},warnings:[]})}]}}]}});assert.equal(e.ctx.runSampleCheck().ok,false);
+});
+
+test('offline self-check explicitly reports simulation without keys, networking, journal writes or false live success',()=>{
+  const e=environment();const result=e.ctx.runLocalSelfCheck();assert.equal(result.mode,'simulated');assert.equal(result.ok,true);assert.equal(result.passed,result.total);assert.equal(result.total,7);assert.equal(e.getFetch(),undefined);assert.equal(Object.keys(e.sheets).length,0);assert.equal(Object.keys(e.props).length,0);assert.equal(e.getArchiveCount(),0);assert.match(result.message,/실제 API 연결 성공을 뜻하지 않습니다/);
+});
