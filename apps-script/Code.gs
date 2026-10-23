@@ -10,7 +10,7 @@ var MADANG = {
 };
 
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('마당 기록장').addItem('기록장 열기', 'showSidebar').addItem('최초 시트 준비', 'setupJournal').addItem('연결 상태 점검', 'showSetupDiagnostics').addItem('계산·성과 새로고침', 'refreshJournal').addItem('Gemini API 키 설정', 'configureApiKey').addItem('인식 모델 설정', 'configureModel').addToUi();
+  SpreadsheetApp.getUi().createMenu('마당 기록장').addItem('기록장 열기', 'showSidebar').addItem('최초 시트 준비', 'setupJournal').addItem('연결 상태 점검', 'showSetupDiagnostics').addItem('등록된 키로 실제 전체 점검', 'showRegisteredKeyVerification').addItem('계산·성과 새로고침', 'refreshJournal').addItem('Gemini API 키 설정', 'configureApiKey').addItem('인식 모델 설정', 'configureModel').addToUi();
 }
 function showSidebar() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutputFromFile('Index').setTitle('마당 · 모의 입찰'));
@@ -56,14 +56,81 @@ function showSetupDiagnostics() {
   var status=getSetupStatus();var ui=SpreadsheetApp.getUi();
   ui.alert('마당 연결 상태', '기록장 시트: '+(status.configured?'준비됨':'확인 필요')+'\nGemini API 키: '+(status.keyPresent?'등록됨 (연결은 별도 점검)':'미등록')+'\n모델: '+status.model+'\n\n'+status.oauthNote, ui.ButtonSet.OK);
 }
+function verifyRegisteredKey() {
+  var report={mode:'live',ok:false,status:'PENDING',message:'등록된 키와 연동 상태를 점검합니다.',checkedAt:new Date().toISOString(),model:'unknown',keySource:'Apps Script 속성',keyVerified:false,checks:[]};
+  var setup;
+  try{setup=getSetupStatus();report.model=setup.model;}catch(setupError){report.status='SETUP_CHECK_FAILED';report.message='Google 권한과 스크립트 속성을 확인하지 못했습니다. 먼저 최초 시트 준비를 실행하세요.';return report;}
+  report.checks.push({label:'기록장 시트 준비',passed:setup.configured,message:setup.configured?'기존 전용 탭 구성을 확인했습니다.':'최초 시트 준비와 Google 권한 승인을 먼저 확인하세요.'});
+  if(!setup.configured){report.status='SETUP_REQUIRED';report.message='실제 점검 전에 최초 시트 준비와 Google 권한 승인이 필요합니다.';return report;}
+  report.checks.push({label:'등록된 API 키 존재',passed:setup.keyPresent,message:setup.keyPresent?'스크립트 속성의 키를 사용합니다. 유효성은 다음 단계에서 확인합니다.':'스크립트 속성 GEMINI_API_KEY가 비어 있습니다.'});
+  if(!setup.keyPresent){report.status='MISSING_KEY';report.message='이 Apps Script에 API 키를 먼저 등록하세요.';return report;}
+  var connection=checkGeminiConnection();var connected=connection.mode==='live'&&connection.ok===true;
+  report.checks.push({label:'등록된 키로 Gemini 실제 연결',passed:connected,message:connection.message});
+  if(!connected){report.status=connection.status||'CONNECTION_FAILED';report.message='실제 Gemini 연결을 확인하지 못해 PDF·시트 쓰기 점검은 실행하지 않았습니다. '+connection.message;return report;}
+  report.keyVerified=true;
+  var sample=runSampleCheck();var samplePassed=sample.mode==='live'&&sample.ok===true;
+  report.checks.push({label:'합성 PDF 실제 인식',passed:samplePassed,message:sample.message});
+  if(!samplePassed){report.status=sample.status||'SAMPLE_CHECK_FAILED';report.message='키 연결은 확인했지만 PDF 인식 점검이 완료되지 않아 시트 쓰기는 실행하지 않았습니다. '+sample.message;return report;}
+  var temporarySheet=null;var temporaryName='';var book=null;
+  try{
+    book=book_();temporaryName='_마당_연동점검_'+String(Utilities.getUuid()).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,32);
+    if(book.getSheetByName(temporaryName)){report.status='TEMP_NAME_CONFLICT';report.message='점검용 시트 이름이 이미 있어 기존 자료를 보존하기 위해 중단했습니다. 다시 점검하세요.';return report;}
+    temporarySheet=book.insertSheet(temporaryName);
+    var normalized=normalizeFields_(sample.extracted,false);
+    var headers=['점검용 표식','사건번호','물건번호','매각기일','감정가','최저가'];
+    var values=[headers,['madang-live-check',normalized.caseNumber,normalized.itemNumber,normalized.auctionDate,normalized.appraisal,normalized.minimumPrice]];
+    temporarySheet.getRange(1,2,2,3).setNumberFormat('@');
+    temporarySheet.getRange(1,1,2,headers.length).setValues(values);SpreadsheetApp.flush();
+    var actual=temporarySheet.getRange(1,1,2,headers.length).getValues();
+    var matches=JSON.stringify(actual)===JSON.stringify(values)&&typeof actual[1][4]==='number'&&typeof actual[1][5]==='number';
+    report.checks.push({label:'임시 시트 쓰기·읽기 일치',passed:matches,message:matches?'합성 자료를 새 임시 탭에 쓰고 숫자 형식까지 다시 읽어 확인했습니다.':'임시 탭의 저장값 또는 숫자 형식이 예상과 다릅니다.'});
+    report.ok=matches;report.status=matches?'VERIFIED':'SHEET_READBACK_MISMATCH';report.message=matches?'등록된 키의 실제 Gemini 연결·PDF 인식·Google 시트 쓰기/읽기를 확인했습니다.':'Gemini 연결과 PDF 인식은 확인했지만 시트 저장값 검증에 실패했습니다.';
+  }catch(sheetError){report.status='SHEET_CHECK_FAILED';report.message='Gemini 연결과 PDF 인식은 확인했지만 임시 시트 쓰기·읽기에 실패했습니다. Google 시트 권한과 사용량을 확인하세요.';report.checks.push({label:'임시 시트 쓰기·읽기 일치',passed:false,message:'시트 읽기·쓰기 작업을 완료하지 못했습니다.'});}
+  finally{
+    if(temporarySheet){
+      try{book.deleteSheet(temporarySheet);SpreadsheetApp.flush();if(book.getSheetByName(temporaryName))throw new Error('temporary-sheet-still-present');report.checks.push({label:'생성한 임시 시트 정리',passed:true,message:'이번 점검이 만든 임시 탭만 삭제하고 제거된 것을 확인했습니다. 실제 기록은 수정하지 않았습니다.'});}
+      catch(cleanupError){report.ok=false;report.status='CLEANUP_FAILED';report.cleanupNeeded=temporaryName;report.message='Gemini·시트 점검 후 임시 탭 정리가 완료되지 않았습니다. '+temporaryName+' 탭을 직접 확인해 삭제하세요. 실제 기록은 수정하지 않았습니다.';report.checks.push({label:'생성한 임시 시트 정리',passed:false,message:'임시 탭 정리가 필요합니다.'});}
+    }
+    report.checkedAt=new Date().toISOString();
+  }
+  return report;
+}
+function showRegisteredKeyVerification(){
+  var result=verifyRegisteredKey();var ui=SpreadsheetApp.getUi();var detail=result.checks.map(function(check){return (check.passed?'✓ ':'✕ ')+check.label;}).join('\n');
+  ui.alert('등록된 키 실제 연동 점검',result.message+'\n\n'+detail+'\n\n점검 방식: 실제 연동 / 모델: '+result.model+'\n키 출처: '+result.keySource,ui.ButtonSet.OK);
+  return result;
+}
 function diagnosticError_(code,message){var error=new Error(message);error.diagnosticCode=code;return error;}
+function unavailableRetryDelay_(response,attempt) {
+  var delay=1000*Math.pow(2,attempt),headers={};
+  try{headers=response.getAllHeaders()||{};}catch(noHeaders){/* A response without a retry hint uses bounded backoff. */}
+  var names=Object.keys(headers).filter(function(name){return name.toLowerCase()==='retry-after';});
+  if(names.length){
+    var value=headers[names[0]];if(Array.isArray(value))value=value[0];value=String(value).trim();
+    var requested;
+    if(/^\d+$/.test(value))requested=Number(value)*1000;
+    else if(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/i.test(value))requested=Date.parse(value)-Date.now();
+    else return null;
+    // Do not shorten a server-requested wait or guess at an invalid retry hint.
+    if(!isFinite(requested)||requested>10000)return null;
+    delay=Math.max(delay,requested,0);
+  }
+  return Math.min(10000,delay+Math.floor(Math.random()*250));
+}
 function requestGeminiJson_(parts,schema) {
   var props=PropertiesService.getScriptProperties();var key=props.getProperty('GEMINI_API_KEY');if(!key)throw diagnosticError_('MISSING_KEY','Gemini API 키를 먼저 등록하세요.');
   var model=props.getProperty('GEMINI_MODEL')||'gemini-flash-latest';if(!/^[a-zA-Z0-9._-]+$/.test(model))throw diagnosticError_('INVALID_MODEL','인식 모델 설정을 확인하세요.');
   var response;
-  try {response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',{method:'post',contentType:'application/json',headers:{'x-goog-api-key':key},payload:JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:schema}}),followRedirects:false,muteHttpExceptions:true});}
-  catch(networkError){throw diagnosticError_('NETWORK_ERROR','Gemini 서버에 연결하지 못했습니다. 네트워크와 Google 외부 요청 권한을 확인하세요.');}
+  var options={method:'post',contentType:'application/json',headers:{'x-goog-api-key':key},payload:JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:schema}}),followRedirects:false,muteHttpExceptions:true};
+  for(var attempt=0;attempt<3;attempt++){
+    try {response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',options);}
+    catch(networkError){throw diagnosticError_('NETWORK_ERROR','Gemini 서버에 연결하지 못했습니다. 네트워크와 Google 외부 요청 권한을 확인하세요.');}
+    if(response.getResponseCode()!==503||attempt===2)break;
+    var retryDelay=unavailableRetryDelay_(response,attempt);if(retryDelay===null)break;
+    Utilities.sleep(retryDelay);
+  }
   var code=response.getResponseCode();
+  if(code===503)throw diagnosticError_('HTTP_503','Gemini 서비스가 일시적으로 요청을 처리하지 못했습니다 (HTTP 503). '+(attempt===2?'자동 재시도 2회 후에도 응답하지 않습니다. ':'')+'잠시 후 같은 모델로 다시 시도하세요. 키의 유효성은 이 오류만으로 판단할 수 없습니다. 입력과 원본 자료는 유지됩니다.');
   if(code!==200){var help=code===429?'사용량 한도·결제·재시도 가능 시간을 확인하세요.':code===401||code===403?'API 키의 유효성과 Gemini API 접근 권한을 확인하세요.':code===404?'계정에서 사용 가능한 모델인지 확인하세요.':'API 키·모델·요청 형식을 확인하세요.';throw diagnosticError_('HTTP_'+code,'Gemini 요청에 실패했습니다 (HTTP '+code+'). '+help+' 입력과 원본 자료는 유지됩니다.');}
   var body;try{body=JSON.parse(response.getContentText());}catch(invalidBody){throw diagnosticError_('INVALID_RESPONSE','인식 서버 응답을 읽을 수 없습니다. 다시 시도하세요.');}
   var candidate=body&&body.candidates&&body.candidates[0];var text=candidate&&candidate.content&&candidate.content.parts?candidate.content.parts.map(function(part){return part.text||'';}).join(''):'';

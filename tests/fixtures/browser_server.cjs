@@ -33,7 +33,7 @@ function runner(success, failure) {
     };
   }});
 }`;
-const allowed = new Set(['setupJournal','getAppState','extractDocuments','extractScreenshot','saveReviewedRecord','updateResult','refreshJournal','getSetupStatus','saveApiKey','checkGeminiConnection','runSampleCheck','runLocalSelfCheck']);
+const allowed = new Set(['setupJournal','getAppState','extractDocuments','extractScreenshot','saveReviewedRecord','updateResult','refreshJournal','getSetupStatus','saveApiKey','checkGeminiConnection','runSampleCheck','runLocalSelfCheck','verifyRegisteredKey']);
 const server = http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.method==='GET'&&req.url==='/'){

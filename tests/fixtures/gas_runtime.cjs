@@ -21,13 +21,13 @@ function environment() {
   }
   const sheets={};const props={};const userProps={};const cache={};let uuid=0;let lockHeld=false;let fetchOptions;let fetchResult;let active=true;let archives=0;let trashed=0;
   const propertyService=store=>({getProperty:k=>store[k]??null,setProperty(k,v){store[k]=v;return this;}});
-  const book={getSheetByName:n=>sheets[n]??null,insertSheet(n){return sheets[n]=new Sheet(n);},getId:()=> 'book-id',getUrl:()=> 'https://docs.google.com/spreadsheets/d/book-id/edit'};
+  const book={getSheetByName:n=>sheets[n]??null,insertSheet(n){return sheets[n]=new Sheet(n);},deleteSheet(sheet){assert.equal(sheets[sheet.name],sheet);delete sheets[sheet.name];},getId:()=> 'book-id',getUrl:()=> 'https://docs.google.com/spreadsheets/d/book-id/edit'};
   const context={console,Date:MockDate,Number,JSON,Object,Array,String,Boolean,Math,RegExp,isFinite,isNaN,
     SpreadsheetApp:{getActiveSpreadsheet:()=>active?book:null,openById:id=>{assert.equal(id,'book-id');return book;},flush(){}},
     PropertiesService:{getScriptProperties:()=>propertyService(props),getUserProperties:()=>propertyService(userProps)},
     LockService:{getScriptLock:()=>({tryLock(){if(lockHeld)return false;lockHeld=true;return true;},releaseLock(){lockHeld=false;}})},
     CacheService:{getUserCache:()=>({put(k,v){cache[k]=v;},get:k=>cache[k]??null})},
-    Utilities:{getUuid:()=>`record-${++uuid}`,base64Decode:v=>[...Buffer.from(v,'base64')],base64Encode:v=>Buffer.from(v).toString('base64'),computeDigest:(_,bytes)=>[...crypto.createHash('sha256').update(Buffer.from(bytes)).digest()],DigestAlgorithm:{SHA_256:'sha256'},newBlob:(...args)=>args,formatDate:date=>date.toISOString().slice(0,10)},
+    Utilities:{getUuid:()=>`record-${++uuid}`,sleep(){},base64Decode:v=>[...Buffer.from(v,'base64')],base64Encode:v=>Buffer.from(v).toString('base64'),computeDigest:(_,bytes)=>[...crypto.createHash('sha256').update(Buffer.from(bytes)).digest()],DigestAlgorithm:{SHA_256:'sha256'},newBlob:(...args)=>args,formatDate:date=>date.toISOString().slice(0,10)},
     UrlFetchApp:{fetch(url,options){fetchOptions={url,...options};return {getResponseCode:()=>fetchResult?.status??200,getContentText:()=>JSON.stringify(fetchResult?.body??{candidates:[{content:{parts:[{text:JSON.stringify({fields:{court:'서울중앙지방법원',caseNumber:'2026타경123',itemNumber:'1',auctionDate:'2026-11-10',minimumPrice:'1억 2300만원',predictedPrice:'999999999'},confidence:{court:'high'},warnings:['최저가 단위를 확인하세요.']})}]}}]})};}},
     DriveApp:{createFolder:()=>({getId:()=> 'folder-id',createFile(){archives++;return {getUrl:()=> 'https://drive.google.com/file/d/image-id/view',setTrashed(v){if(v)trashed++;}};}}),getFolderById:()=>({createFile(){archives++;return {getUrl:()=> 'https://drive.google.com/file/d/image-id/view',setTrashed(v){if(v)trashed++;}};}})}
   };

@@ -155,6 +155,26 @@ class BrowserWorkflow(unittest.TestCase):
         self.assertFalse(errors)
         page.close()
 
+    def test_04_registered_key_full_check_uses_temporary_sheet_and_redacted_report(self):
+        page=self.new_page()
+        errors=[]
+        page.on('pageerror',lambda e:errors.append(str(e)))
+        page.goto(self.base)
+        expect(page.locator('#connection')).to_contain_text('연결됨')
+        before=self.inspect()
+        page.locator('#connectionSetup summary').click()
+        page.locator('#verifyRegisteredKey').click()
+        expect(page.locator('#diagnosticMessage')).to_contain_text('등록된 키의 실제 Gemini 연결')
+        expect(page.locator('#diagnosticChecks li')).to_have_count(6)
+        expect(page.locator('#copyVerification')).to_be_visible()
+        after=self.inspect()
+        self.assertEqual(before['state']['records'],after['state']['records'])
+        self.assertEqual(before['audit'],after['audit'])
+        self.assertEqual(before['archived'],after['archived'])
+        self.assertFalse(errors)
+        page.screenshot(path=str(self.artifacts/'registered-key-verification.png'),full_page=True)
+        page.close()
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
