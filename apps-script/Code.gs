@@ -65,6 +65,7 @@ function verifyRegisteredKey() {
   report.checks.push({label:'등록된 API 키 존재',passed:setup.keyPresent,message:setup.keyPresent?'스크립트 속성의 키를 사용합니다. 유효성은 다음 단계에서 확인합니다.':'스크립트 속성 GEMINI_API_KEY가 비어 있습니다.'});
   if(!setup.keyPresent){report.status='MISSING_KEY';report.message='이 Apps Script에 API 키를 먼저 등록하세요.';return report;}
   var connection=checkGeminiConnection();var connected=connection.mode==='live'&&connection.ok===true;
+  if(connection.safeDetail)report.safeDetail=connection.safeDetail;if(connection.metadataProbe)report.metadataProbe=connection.metadataProbe;
   report.checks.push({label:'등록된 키로 Gemini 실제 연결',passed:connected,message:connection.message});
   if(!connected){report.status=connection.status||'CONNECTION_FAILED';report.message='실제 Gemini 연결을 확인하지 못해 PDF·시트 쓰기 점검은 실행하지 않았습니다. '+connection.message;return report;}
   report.keyVerified=true;
@@ -101,6 +102,32 @@ function showRegisteredKeyVerification(){
   return result;
 }
 function diagnosticError_(code,message){var error=new Error(message);error.diagnosticCode=code;return error;}
+function fetchFailure_(error,key) {
+  var original='';try{original=String(error&&error.message||error||'');}catch(unreadable){original='';}
+  var safe=original;
+  [key,encodeURIComponent(key||'')].filter(Boolean).forEach(function(value){safe=safe.split(value).join('[키 숨김]');});
+  safe=safe.replace(/https?:\/\/[^\s<>"']+/gi,'[URL 숨김]').replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[이메일 숨김]').replace(/[A-Za-z0-9_+\/=.-]{24,}/g,'[식별값 숨김]').slice(0,400);
+  var code='NETWORK_ERROR',help='Google 요청 기능에서 원인을 분류하지 못한 예외가 발생했습니다. 키를 제외한 진단 결과를 복사해 확인하세요.';
+  if(/quota|too many times|too many requests|limit exceeded|할당량|사용량.*초과/i.test(original)){code='URLFETCH_QUOTA';help='Google Apps Script의 외부 요청 사용량 한도에 걸렸습니다. Apps Script 실행 내역과 계정 한도를 확인하고 제한이 풀린 뒤 실행하세요.';}
+  else if(/script\.external_request|do not have permission|permission.*(?:required|denied)|authorization.*required|권한|승인/i.test(original)){code='EXTERNAL_REQUEST_PERMISSION';help='Google Apps Script의 외부 요청 권한이 부족합니다. 편집기에서 checkGeminiConnection을 직접 실행하고 표시되는 권한 요청을 승인하세요. 조직 계정에서 차단되면 관리자 설정을 확인해야 합니다.';}
+  else if(/timed?\s*out|timeout|시간.*초과/i.test(original)){code='FETCH_TIMEOUT';help='Google Apps Script의 Gemini 요청이 시간 초과되었습니다. 잠시 뒤 API 연결 점검부터 실행하세요. 이 오류로 키 유효성을 확정할 수는 없습니다.';}
+  else if(/dns|name.*resolution|host.*not.*found/i.test(original)){code='FETCH_DNS';help='Google Apps Script에서 Gemini 주소를 찾지 못했습니다. 잠시 뒤 다시 확인하고 계속되면 조직의 외부 접속 정책을 확인하세요.';}
+  else if(/ssl|tls|certificate|인증서/i.test(original)){code='FETCH_TLS';help='Google Apps Script의 보안 연결 검증에 실패했습니다. 인증서 검증을 끄지 말고 Google 서비스 상태와 조직 접속 정책을 확인하세요.';}
+  else if(/address unavailable|connection.*(?:refused|reset)|socket|접속.*불가/i.test(original)){code='FETCH_UNAVAILABLE';help='Google Apps Script에서 Gemini 연결을 열거나 유지하지 못했습니다. 잠시 뒤 다시 확인하세요.';}
+  else if(/invalid argument|argument too large|invalid.*(?:url|header)|잘못된 인수/i.test(original)){code='FETCH_INVALID_REQUEST';help='Google Apps Script가 요청 주소·헤더·자료 크기 중 일부를 거부했습니다. 키를 제외한 진단 결과로 설정을 확인해야 합니다.';}
+  var result=diagnosticError_(code,'['+code+'] '+help);result.transportFailure=true;result.safeDetail=safe||'예외 상세를 가져오지 못했습니다.';return result;
+}
+function probeGeminiMetadata_() {
+  var key=PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if(!key)return {ok:false,status:'MISSING_KEY',message:'등록된 키가 없습니다.'};
+  try{
+    var response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',{method:'get',headers:{'x-goog-api-key':key},followRedirects:false,muteHttpExceptions:true});
+    var code=response.getResponseCode();if(code!==200)return {ok:false,status:'HTTP_'+code,message:'읽기 전용 모델 목록 점검 응답: HTTP '+code+'. 생성 요청의 권한·상태와 별도로 해석해야 합니다.'};
+    var body;try{body=JSON.parse(response.getContentText());}catch(invalid){return {ok:false,status:'INVALID_RESPONSE',message:'모델 목록 응답을 읽지 못했습니다.'};}
+    if(!body||!Array.isArray(body.models))return {ok:false,status:'INVALID_RESPONSE',message:'정상 모델 목록 응답인지 확인하지 못했습니다.'};
+    return {ok:true,status:'MODEL_LIST_ACCESSIBLE',message:'같은 키로 Google 모델 목록은 조회했습니다. 생성 요청의 시간 초과·모델 상태·접근 권한은 별도 확인이 필요합니다.'};
+  }catch(error){var failure=fetchFailure_(error,key);return {ok:false,status:failure.diagnosticCode,message:failure.message,safeDetail:failure.safeDetail};}
+}
 function unavailableRetryDelay_(response,attempt) {
   var delay=1000*Math.pow(2,attempt),headers={};
   try{headers=response.getAllHeaders()||{};}catch(noHeaders){/* A response without a retry hint uses bounded backoff. */}
@@ -124,7 +151,7 @@ function requestGeminiJson_(parts,schema) {
   var options={method:'post',contentType:'application/json',headers:{'x-goog-api-key':key},payload:JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:schema}}),followRedirects:false,muteHttpExceptions:true};
   for(var attempt=0;attempt<3;attempt++){
     try {response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',options);}
-    catch(networkError){throw diagnosticError_('NETWORK_ERROR','Gemini 서버에 연결하지 못했습니다. 네트워크와 Google 외부 요청 권한을 확인하세요.');}
+    catch(networkError){throw fetchFailure_(networkError,key);}
     if(response.getResponseCode()!==503||attempt===2)break;
     var retryDelay=unavailableRetryDelay_(response,attempt);if(retryDelay===null)break;
     Utilities.sleep(retryDelay);
@@ -145,7 +172,11 @@ function checkGeminiConnection() {
     var raw=requestGeminiJson_([{text:'This is a connection test for a private auction journal. Return only {"status":"madang_connection_ok"}.'}],{type:'OBJECT',properties:{status:{type:'STRING',enum:['madang_connection_ok']}},required:['status']});
     if(raw.status!=='madang_connection_ok')throw diagnosticError_('INVALID_RESPONSE','서버에 연결되었지만 점검 응답을 확인하지 못했습니다.');
     return {mode:'live',ok:true,status:'CONNECTED',model:model,message:'Gemini API에 실제 연결했고 점검 응답을 확인했습니다. Google 시트 권한은 별도입니다.'};
-  } catch(error) {return {mode:'live',ok:false,status:error.diagnosticCode||'CHECK_FAILED',model:model,message:error.diagnosticCode?error.message:'연결 점검에 실패했습니다. Google 외부 요청 권한과 API 설정을 확인하세요.'};}
+  } catch(error) {
+    var failed={mode:'live',ok:false,status:error.diagnosticCode||'CHECK_FAILED',model:model,message:error.diagnosticCode?error.message:'연결 점검에 실패했습니다. Google 외부 요청 권한과 API 설정을 확인하세요.'};
+    if(error.transportFailure){failed.safeDetail=error.safeDetail;if(['EXTERNAL_REQUEST_PERMISSION','URLFETCH_QUOTA'].indexOf(error.diagnosticCode)<0){failed.metadataProbe=probeGeminiMetadata_();failed.message+=' '+failed.metadataProbe.message;}}
+    return failed;
+  }
 }
 function samplePdfDocument_() {
   var lines=['SYNTHETIC AUCTION TEST - NOT A REAL PROPERTY','Court: Seoul Central District Court','Case number: 2030-TEST-42','Item number: 1','Auction date: 2030-10-22','Appraisal: 200000000 KRW','Minimum price: 140000000 KRW','Sale result: UNKNOWN'];
@@ -161,7 +192,7 @@ function runSampleCheck() {
     var extracted=extractDocuments([samplePdfDocument_()]);var normalized=normalizeFields_(extracted.fields,false);var checks=['caseNumber','itemNumber','auctionDate','appraisal','minimumPrice'].map(function(key){return {field:key,expected:expected[key],actual:normalized[key],passed:normalized[key]===expected[key]};});
     var passed=checks.every(function(check){return check.passed;});
     return {mode:'live',ok:passed,expected:expected,extracted:extracted.fields,checks:checks,warnings:extracted.warnings,message:(passed?'합성 PDF의 점검 항목이 모두 일치했습니다.':'합성 PDF를 인식했지만 일부 점검 항목이 일치하지 않습니다.')+' 점검 자료는 기록장과 Drive에 저장하지 않았습니다.'};
-  } catch(error) {return {mode:'live',ok:false,status:error.diagnosticCode||'SAMPLE_FAILED',expected:expected,extracted:null,checks:[],warnings:[],message:error.diagnosticCode?error.message:'샘플 자료 점검에 실패했습니다. API 연결과 모델 설정을 확인하세요.'};}
+  } catch(error) {return {mode:'live',ok:false,status:error.diagnosticCode||'SAMPLE_FAILED',expected:expected,extracted:null,checks:[],warnings:[],safeDetail:error.safeDetail||'',message:error.diagnosticCode?error.message:'샘플 자료 점검에 실패했습니다. API 연결과 모델 설정을 확인하세요.'};}
 }
 function runLocalSelfCheck() {
   var checks=[];var check=function(id,label,fn){var passed=false;try{passed=fn()===true;}catch(failure){passed=false;}checks.push({id:id,label:label,passed:passed});};

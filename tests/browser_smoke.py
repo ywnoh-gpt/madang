@@ -175,6 +175,28 @@ class BrowserWorkflow(unittest.TestCase):
         page.screenshot(path=str(self.artifacts/'registered-key-verification.png'),full_page=True)
         page.close()
 
+    def test_05_transport_failure_shows_redacted_cause_and_never_claims_key_verified(self):
+        page=self.new_page()
+        page.goto(self.base)
+        expect(page.locator('#connection')).to_contain_text('연결됨')
+        before=self.inspect()
+        page.locator('#connectionSetup summary').click()
+        page.locator('#apiKeyInput').fill('browser-timeout-fixture-not-real')
+        page.locator('#storeApiKey').click()
+        expect(page.locator('#apiKeyInput')).to_have_value('')
+        page.locator('#verifyRegisteredKey').click()
+        expect(page.locator('#diagnosticMessage')).to_contain_text('FETCH_TIMEOUT')
+        expect(page.locator('#diagnosticMessage')).to_contain_text('모델 목록은 조회')
+        expect(page.locator('#diagnosticChecks')).to_contain_text('Google 예외 상세')
+        self.assertNotIn('browser-timeout-fixture-not-real',page.locator('body').inner_text())
+        self.assertFalse(page.evaluate('state.verification.keyVerified'))
+        self.assertFalse(page.evaluate('state.verification.ok'))
+        after=self.inspect()
+        self.assertEqual(before['state']['records'],after['state']['records'])
+        self.assertEqual(before['audit'],after['audit'])
+        self.assertEqual(before['archived'],after['archived'])
+        page.close()
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

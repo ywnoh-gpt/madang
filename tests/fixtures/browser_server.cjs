@@ -12,6 +12,11 @@ const extractionFixture={status:200,body:{candidates:[{content:{parts:[{text:JSO
 })}]}}]}};
 const fetchFixture=runtime.ctx.UrlFetchApp.fetch;
 runtime.ctx.UrlFetchApp.fetch=(url,options)=>{
+  if(options.method==='get'){
+    runtime.setFetch({status:200,body:{models:[{name:'models/test-fixture'}]}});
+    return fetchFixture(url,options);
+  }
+  if(options.headers['x-goog-api-key']==='browser-timeout-fixture-not-real')throw new Error('Timeout: https://generativelanguage.googleapis.com/test?key=browser-timeout-fixture-not-real');
   const parts=JSON.parse(options.payload).contents[0].parts;
   if(parts.length===1&&parts[0].text.includes('madang_connection_ok')){
     runtime.setFetch({status:200,body:{candidates:[{content:{parts:[{text:'{"status":"madang_connection_ok"}'}]}}]}});

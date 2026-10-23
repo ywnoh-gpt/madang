@@ -36,7 +36,7 @@ test('a non-503 or ambiguous network error stops immediately, including after a 
     const first=scenario([{status}]);assert.equal(first.run().status,'HTTP_'+status);assert.equal(first.calls.length,1);assert.equal(first.sleeps.length,0);
     const second=scenario([{status:503},{status}]);assert.equal(second.run().status,'HTTP_'+status);assert.equal(second.calls.length,2);assert.equal(second.sleeps.length,1);
   }
-  const network=scenario([{status:503},{throw:true}]);assert.equal(network.run().status,'NETWORK_ERROR');assert.equal(network.calls.length,2);assert.equal(network.sleeps.length,1);
+  const network=scenario([{status:503},{throw:true}]);assert.equal(network.run().status,'NETWORK_ERROR');assert.equal(network.calls.filter(call=>call.options.method==='post').length,2);assert.equal(network.calls.filter(call=>call.options.method==='get').length,1);assert.equal(network.sleeps.length,1);
 });
 
 test('Retry-After hints are case-insensitive, support arrays and never shorten server waits',()=>{
