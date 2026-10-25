@@ -26,7 +26,7 @@ runtime.ctx.UrlFetchApp.fetch=(url,options)=>{
   return fetchFixture(url,options);
 };
 const bridge = `
-window.google = {script:{run: runner()}};
+window.hostCloseCount=0;window.google = {script:{run: runner(),host:{close:function(){window.hostCloseCount++;}}}};
 function runner(success, failure) {
   return new Proxy({}, {get: function(_, method) {
     if (method === 'withSuccessHandler') return function(fn) {return runner(fn, failure);};
@@ -41,9 +41,9 @@ function runner(success, failure) {
 const allowed = new Set(['setupJournal','getAppState','extractDocuments','extractScreenshot','saveReviewedRecord','updateResult','refreshJournal','getSetupStatus','saveApiKey','checkGeminiConnection','runSampleCheck','runLocalSelfCheck','verifyRegisteredKey','verifySheetReadWrite','getLastDiagnostic','setModel']);
 const server = http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
-  if(req.method==='GET'&&req.url==='/'){
+  if(req.method==='GET'&&(req.url==='/'||req.url==='/?mode=dialog')){
     res.setHeader('Content-Type','text/html; charset=utf-8');
-    const html=fs.readFileSync(path.resolve(__dirname,'../../apps-script/Index.html'),'utf8');
+    let html=fs.readFileSync(path.resolve(__dirname,'../../apps-script/Index.html'),'utf8');if(req.url==='/?mode=dialog')html=html.replace('data-host-mode="web"','data-host-mode="dialog"');
     return res.end(html.replace('</head>','<script>'+bridge+'</script></head>'));
   }
   if(req.method==='GET'&&req.url==='/inspect'){

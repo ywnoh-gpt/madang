@@ -10,13 +10,18 @@ var MADANG = {
 };
 
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('마당 기록장').addItem('기록장 열기', 'showSidebar').addItem('최초 시트 준비', 'setupJournal').addItem('연결 상태 점검', 'showSetupDiagnostics').addItem('등록 키·모델 조회', 'showRegisteredKeyVerification').addItem('계산·성과 새로고침', 'refreshJournal').addItem('Gemini API 키 설정', 'configureApiKey').addItem('인식 모델 설정', 'configureModel').addToUi();
+  SpreadsheetApp.getUi().createMenu('마당 기록장').addItem('기록장 열기 (넓은 창)', 'showJournalDialog').addItem('작은 사이드바로 열기', 'showNarrowSidebar').addItem('최초 시트 준비', 'setupJournal').addItem('연결 상태 점검', 'showSetupDiagnostics').addItem('등록 키·모델 조회', 'showRegisteredKeyVerification').addItem('계산·성과 새로고침', 'refreshJournal').addItem('Gemini API 키 설정', 'configureApiKey').addItem('인식 모델 설정', 'configureModel').addToUi();
 }
-function showSidebar() {
-  SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutputFromFile('Index').setTitle('마당 · 모의 입찰'));
+function journalView_(mode){
+  var html=HtmlService.createHtmlOutputFromFile('Index').getContent();
+  return HtmlService.createHtmlOutput(html.replace('data-host-mode="web"','data-host-mode="'+mode+'"')).setTitle('마당 · 모의 입찰');
 }
+function showJournalDialog(){SpreadsheetApp.getUi().showModalDialog(journalView_('dialog').setWidth(1100).setHeight(800),'마당 · 모의 입찰 기록장');}
+// Keep old menu entries working after the code is updated, before the sheet reloads.
+function showSidebar(){showJournalDialog();}
+function showNarrowSidebar(){SpreadsheetApp.getUi().showSidebar(journalView_('sidebar'));}
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index').setTitle('마당 · 모의 입찰');
+  return journalView_('web');
 }
 function configureApiKey() {
   var ui = SpreadsheetApp.getUi();

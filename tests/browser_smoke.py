@@ -207,6 +207,46 @@ class BrowserWorkflow(unittest.TestCase):
         self.assertEqual(before['archived'],after['archived'])
         page.close()
 
+    def test_06_large_dialog_closes_only_after_confirmed_save(self):
+        page=self.new_page(1100)
+        errors=[]
+        page.on('pageerror',lambda e:errors.append(str(e)))
+        page.goto(self.base+'/?mode=dialog')
+        expect(page.locator('#connection')).to_contain_text('연결됨')
+        expect(page.locator('#saveAndClose')).to_be_visible()
+        for key,value in {'court':'서울중앙지방법원','caseNumber':'2026타경123','itemNumber':'1','auctionDate':'2026-11-10'}.items():
+            page.locator('#'+key).fill(value)
+        page.locator('#reviewed').check()
+        page.locator('#saveAndClose').click()
+        expect(page.locator('#saveMessage')).to_contain_text('이미 있습니다')
+        self.assertEqual(page.evaluate('window.hostCloseCount'),0)
+        page.locator('#itemNumber').fill('900')
+        self.assertEqual(page.locator('#itemNumber').input_value(),'900')
+        page.locator('#reviewed').check()
+        page.locator('#saveAndClose').click()
+        expect(page.locator('#saveMessage')).to_contain_text('저장했습니다')
+        page.wait_for_function('window.hostCloseCount===1')
+        self.assertTrue(any(r['itemNumber']=='900' for r in self.inspect()['state']['records']))
+        self.assertFalse(errors)
+        page.screenshot(path=str(self.artifacts/'large-dialog.png'),full_page=True)
+        page.close()
+
+    def test_07_dialog_dirty_close_confirmation_and_web_buttons(self):
+        page=self.new_page(1100)
+        page.goto(self.base+'/?mode=dialog')
+        expect(page.locator('#connection')).to_contain_text('연결됨')
+        page.locator('#court').fill('작성 중')
+        page.once('dialog',lambda dialog:dialog.dismiss())
+        page.locator('#closeJournal').click()
+        self.assertEqual(page.evaluate('window.hostCloseCount'),0)
+        page.once('dialog',lambda dialog:dialog.accept())
+        page.locator('#closeJournal').click()
+        self.assertEqual(page.evaluate('window.hostCloseCount'),1)
+        page.goto(self.base)
+        expect(page.locator('#saveAndClose')).to_be_hidden()
+        expect(page.locator('#closeJournal')).to_be_hidden()
+        page.close()
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

@@ -9,7 +9,7 @@ test('single-file installation embeds the current UI and runs setup without an H
   const runtime=createRuntime();
   const bundle=fs.readFileSync('dist/Madang.gs','utf8');
   vm.runInContext(bundle,runtime.ctx);
-  runtime.ctx.HtmlService={createHtmlOutput:html=>({setTitle:title=>({html,title})})};
+  runtime.ctx.HtmlService={createHtmlOutput:html=>({html,getContent(){return this.html;},setTitle(title){this.title=title;return this;},setWidth(width){this.width=width;return this;},setHeight(height){this.height=height;return this;}})};
   const output=runtime.ctx.doGet();
   assert.equal(output.html,fs.readFileSync('apps-script/Index.html','utf8'));
   assert.match(output.html,/application\/pdf/);
@@ -17,6 +17,10 @@ test('single-file installation embeds the current UI and runs setup without an H
   assert.doesNotMatch(bundle,/createHtmlOutputFromFile/);
   assert.equal(runtime.ctx.setupJournal().configured,true);
   assert.equal(runtime.ctx.getAppState().apiKeyConfigured,false);
+  const opened={};runtime.ctx.SpreadsheetApp.getUi=()=>({showModalDialog(view,title){opened.dialog={view,title};},showSidebar(view){opened.sidebar=view;}});
+  runtime.ctx.showJournalDialog();assert.equal(opened.dialog.view.width,1100);assert.equal(opened.dialog.view.height,800);assert.match(opened.dialog.view.html,/data-host-mode="dialog"/);
+  runtime.ctx.showSidebar();assert.match(opened.dialog.view.html,/data-host-mode="dialog"/);
+  runtime.ctx.showNarrowSidebar();assert.match(opened.sidebar.html,/data-host-mode="sidebar"/);
 });
 
 test('manifest declares the integration scopes and private owner-only deployment',()=>{
