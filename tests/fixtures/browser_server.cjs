@@ -21,7 +21,7 @@ runtime.ctx.UrlFetchApp.fetch=(url,options)=>{
   if(parts.length===1&&parts[0].text.includes('madang_connection_ok')){
     runtime.setFetch({status:200,body:{candidates:[{content:{parts:[{text:'{"status":"madang_connection_ok"}'}]}}]}});
   }else if(parts.some(part=>part.inlineData?.mimeType==='application/pdf'&&Buffer.from(part.inlineData.data,'base64').includes(Buffer.from('2030-TEST-42')))){
-    runtime.setFetch({status:200,body:{candidates:[{content:{parts:[{text:JSON.stringify({fields:{court:'Seoul Central District Court',caseNumber:'2030-TEST-42',itemNumber:'1',auctionDate:'2030-10-22',appraisal:'200000000',minimumPrice:'140000000'},confidence:{},warnings:[]})}]}}]}});
+    runtime.setFetch({status:200,body:{candidates:[{content:{parts:[{text:JSON.stringify({fields:{court:'Seoul Central District Court',caseNumber:'2030-TEST-42',itemNumber:'1',auctionDate:'2030-10-22',appraisal:'200000000 KRW',minimumPrice:'KRW 140,000,000',saleResult:'UNKNOWN'},confidence:{},warnings:[]})}]}}]}});
   }else runtime.setFetch(extractionFixture);
   return fetchFixture(url,options);
 };

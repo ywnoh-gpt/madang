@@ -72,14 +72,14 @@ function recordedDiagnostic_(stage,fn) {
   catch(error){report={mode:'live',ok:false,status:error.diagnosticCode||'DIAGNOSTIC_FAILED',message:error.diagnosticCode?error.message:'점검을 완료하지 못했습니다. Google 실행 내역과 마지막 점검 기록을 확인하세요.',keyVerified:false};if(error.safeDetail)report.safeDetail=error.safeDetail;}
   report.keyVerified=stage==='api_generation'&&report.status==='CONNECTED'&&report.ok===true;report.model=report.model||marker.model;report.scope=stage;report.keySource=report.keySource||(stage==='sheet_roundtrip'?'미사용 (시트 전용 점검)':'Apps Script 속성');report.checkedAt=new Date().toISOString();
   var current;try{current=JSON.parse(properties.getProperty('MADANG_LAST_DIAGNOSTIC')||'null');}catch(invalid){current=null;}
-  if(current&&current.id===marker.id){marker.state='COMPLETED';marker.finishedAt=report.checkedAt;marker.ok=report.ok===true;marker.status=report.status||'';marker.message=String(report.message||'').slice(0,1200);marker.keyVerified=report.keyVerified===true;marker.keyAcceptedForModelList=report.keyAcceptedForModelList===true;if(report.googleError)marker.googleError=report.googleError;properties.setProperty('MADANG_LAST_DIAGNOSTIC',JSON.stringify(marker));}
+  if(current&&current.id===marker.id){marker.state='COMPLETED';marker.finishedAt=report.checkedAt;marker.ok=report.ok===true;marker.status=report.status||'';marker.message=String(report.message||'').slice(0,1200);marker.keyVerified=report.keyVerified===true;marker.keyAcceptedForModelList=report.keyAcceptedForModelList===true;if(report.googleError)marker.googleError=report.googleError;if(report.failurePhase)marker.failurePhase=report.failurePhase;if(report.safeDetail)marker.safeDetail=String(report.safeDetail).slice(0,500);properties.setProperty('MADANG_LAST_DIAGNOSTIC',JSON.stringify(marker));}
   return report;
 }
 function getLastDiagnostic() {
   var last;try{last=JSON.parse(PropertiesService.getUserProperties().getProperty('MADANG_LAST_DIAGNOSTIC')||'null');}catch(invalid){last=null;}
   if(!last)return {mode:'live',ok:false,status:'NO_DIAGNOSTIC',keySource:'Apps Script 속성',message:'아직 점검 기록이 없습니다.'};
   var unfinished=last.state==='RUNNING';
-  return {mode:'live',ok:!unfinished&&last.ok===true,status:unfinished?'NO_COMPLETION':last.status,scope:last.stage,model:last.model,googleError:last.googleError||null,keySource:'Apps Script 속성',keyVerified:!unfinished&&last.keyVerified===true,keyAcceptedForModelList:!unfinished&&last.keyAcceptedForModelList===true,message:unfinished?'마지막 단계: '+last.stageLabel+'. 시작 기록은 있으나 종료 기록이 없습니다. 진행 중이거나 Google 실행 제한으로 종료됐을 수 있습니다. Apps Script 실행 내역을 확인하고 중복 실행하지 마세요.':last.message,lastDiagnostic:last};
+  return {mode:'live',ok:!unfinished&&last.ok===true,status:unfinished?'NO_COMPLETION':last.status,scope:last.stage,model:last.model,failurePhase:last.failurePhase||null,safeDetail:last.safeDetail||'',googleError:last.googleError||null,keySource:'Apps Script 속성',keyVerified:!unfinished&&last.keyVerified===true,keyAcceptedForModelList:!unfinished&&last.keyAcceptedForModelList===true,message:unfinished?'마지막 단계: '+last.stageLabel+'. 시작 기록은 있으나 종료 기록이 없습니다. 진행 중이거나 Google 실행 제한으로 종료됐을 수 있습니다. Apps Script 실행 내역을 확인하고 중복 실행하지 마세요.':last.message,lastDiagnostic:last};
 }
 function verifyRegisteredKey() {return recordedDiagnostic_('model_metadata',function(){
   var props=PropertiesService.getScriptProperties();if(!props.getProperty('GEMINI_API_KEY'))return {mode:'live',ok:false,status:'MISSING_KEY',keyVerified:false,message:'등록된 키가 없습니다.'};
@@ -214,12 +214,22 @@ function samplePdfDocument_() {
 function runSampleCheck(){return recordedDiagnostic_('pdf_generation',runSampleCheck_);}
 function runSampleCheck_() {
   var expected={court:'Seoul Central District Court',caseNumber:'2030-TEST-42',itemNumber:'1',auctionDate:'2030-10-22',appraisal:200000000,minimumPrice:140000000};
+  var phase='sample_pdf',extracted=null;
   try {
-    var extracted=extractDocuments([samplePdfDocument_()]);var normalized=normalizeFields_(extracted.fields,false);var checks=['caseNumber','itemNumber','auctionDate','appraisal','minimumPrice'].map(function(key){return {field:key,expected:expected[key],actual:normalized[key],passed:normalized[key]===expected[key]};});
+    var document=samplePdfDocument_();phase='extract_documents';extracted=extractDocuments([document]);
+    phase='validate_fields';var normalized=normalizeFields_(extracted.fields,false);
+    phase='compare_values';var checks=['caseNumber','itemNumber','auctionDate','appraisal','minimumPrice'].map(function(key){return {field:key,expected:expected[key],actual:normalized[key],passed:normalized[key]===expected[key]};});
     var passed=checks.every(function(check){return check.passed;});
-    return {mode:'live',ok:passed,expected:expected,extracted:extracted.fields,checks:checks,warnings:extracted.warnings,message:(passed?'합성 PDF의 점검 항목이 모두 일치했습니다.':'합성 PDF를 인식했지만 일부 점검 항목이 일치하지 않습니다.')+' 점검 자료는 기록장과 Drive에 저장하지 않았습니다.'};
-  } catch(error) {return {mode:'live',ok:false,status:error.diagnosticCode||'SAMPLE_FAILED',expected:expected,extracted:null,checks:[],warnings:[],googleError:error.googleError||null,safeDetail:error.safeDetail||'',message:error.diagnosticCode?error.message:'샘플 자료 점검에 실패했습니다. API 연결과 모델 설정을 확인하세요.'};}
+    return {mode:'live',ok:passed,status:passed?'SAMPLE_PASSED':'SAMPLE_MISMATCH',expected:expected,extracted:extracted.fields,normalized:normalized,apiResponseReceived:true,checks:checks,warnings:extracted.warnings,message:(passed?'합성 PDF의 점검 항목이 모두 일치했습니다.':'합성 PDF를 인식했지만 일부 점검 항목이 일치하지 않습니다.')+' 점검 자료는 기록장과 Drive에 저장하지 않았습니다.'};
+  } catch(error) {
+    var key=PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY')||'';
+    var detail=error.safeDetail||redactDiagnosticText_(error.message||'상세 원인 없음',key,500);
+    var received=Boolean(extracted||error.apiResponseReceived);
+    var fields=extracted?extracted.fields:error.extractedFields||null;
+    return {mode:'live',ok:false,status:error.diagnosticCode||(phase==='validate_fields'?'SAMPLE_VALUE_INVALID':'SAMPLE_PROCESSING_FAILED'),failurePhase:error.failurePhase||phase,apiResponseReceived:received,expected:expected,extracted:fields,checks:[],warnings:extracted?extracted.warnings:[],googleError:error.googleError||null,safeDetail:detail,message:error.diagnosticCode?error.message:(received?'PDF 인식 응답을 받았지만 반환값 검증에서 실패했습니다. ':'샘플 PDF의 '+phase+' 단계에서 실패했습니다. ')+detail};
+  }
 }
+
 function runLocalSelfCheck() {
   var checks=[];var check=function(id,label,fn){var passed=false;try{passed=fn()===true;}catch(failure){passed=false;}checks.push({id:id,label:label,passed:passed});};
   check('korean-money','억·만원 단위 계산',function(){return amount_('1억 2300만원','점검')===123000000&&amount_('1.1억','점검')===110000000;});
@@ -320,7 +330,7 @@ function safeText_(value){return /^[=+\-@\t\r]/.test(value)?"'"+value:value;}
 function amount_(value,label){
   if(value===null||value===undefined||value==='')return null;
   if(typeof value==='number'){if(!Number.isFinite(value)||value<0||!Number.isSafeInteger(value))throw new Error(label+'는 0 이상의 정수 원 단위로 입력하세요.');return value;}
-  var s=String(value).trim().replace(/,/g,'').replace(/\s+/g,'').replace(/원$/,'');
+  var s=String(value).trim().replace(/^(?:KRW|[₩￦])\s*/i,'').replace(/\s*(?:KRW|[₩￦])$/i,'').replace(/,/g,'').replace(/\s+/g,'').replace(/원$/,'');
   if(/^\d+$/.test(s)){var n=Number(s);if(Number.isSafeInteger(n))return n;}
   // Full unit-bearing Korean amounts only; malformed or unlabeled decimals are rejected.
   if(/^(?:\d+(?:\.\d+)?억)?(?:\d+(?:\.\d+)?만)?(?:\d+)?$/.test(s)&&/[억만]/.test(s)){
@@ -341,7 +351,7 @@ function normalizeFields_(input,requireIdentity){
   r.area=input.area===null||input.area===undefined||input.area===''?null:Number(String(input.area).replace(/,/g,''));if(r.area!==null&&(!isFinite(r.area)||r.area<=0))throw new Error('면적은 양수 숫자로 입력하세요.');
   r.auctionDate=date_(input.auctionDate,'매각기일');r.forecastDate=date_(input.forecastDate,'예상 작성일');
   r.memoUrl=url_(input.memoUrl);r.sourceUrl=url_(input.sourceUrl);
-  r.saleResult=text_(input.saleResult)||'미확인';if(MADANG.saleResults.indexOf(r.saleResult)<0)throw new Error('매각 결과를 확인하세요.');
+  r.saleResult=text_(input.saleResult)||'미확인';if(/^UNKNOWN$/i.test(r.saleResult))r.saleResult='미확인';if(MADANG.saleResults.indexOf(r.saleResult)<0)throw new Error('매각 결과를 확인하세요.');
   if(requireIdentity&&!(r.court&&r.caseNumber&&r.itemNumber&&r.auctionDate))throw new Error('법원·사건번호·물건번호·매각기일을 입력하세요.');
   if(r.saleResult==='낙찰'&&!(r.actualPrice>0))throw new Error('낙찰 결과에는 양수인 실제 낙찰가가 필요합니다.');
   return r;
@@ -378,10 +388,14 @@ function extractDocuments(documents){
   var parts=[{text:prompt}];sources.forEach(function(source){parts.push({text:'출처 파일명: '+source.name+' / 자료 종류: '+(source.documentType||'미지정')});parts.push({inlineData:{mimeType:source.mime,data:source.base64}});});
   var raw=requestGeminiJson_(parts,extractionSchema_());
   var extracted={fields:{},confidence:{},warnings:[]};
+  var phase='field_processing';
+  try{
   MADANG.extractionKeys.forEach(function(k){var v=raw.fields&&raw.fields[k];extracted.fields[k]=v===null||v===undefined?null:text_(v,1000);var c=raw.confidence&&raw.confidence[k];extracted.confidence[k]=['high','medium','low','unknown'].indexOf(c)>=0?c:'unknown';});
   extracted.warnings=Array.isArray(raw.warnings)?raw.warnings.slice(0,20).map(function(v){return text_(v,1000);}):[];
   extracted.draftId=Utilities.getUuid();extracted.sources=sources.map(function(source){return {name:source.name,mimeType:source.mime,hash:source.hash};});extracted.imageHash=sources[0].hash;
+  phase='draft_cache';
   CacheService.getUserCache().put('madang:'+extracted.draftId,JSON.stringify(extracted),21600);
+  }catch(error){var failure=diagnosticError_(phase==='draft_cache'?'DRAFT_CACHE_FAILED':'EXTRACTED_FIELD_INVALID',phase==='draft_cache'?'인식 응답을 받았지만 검토용 캐시 저장에 실패했습니다. 점검 결과의 상세 원인을 확인하세요.':'인식 응답의 항목을 처리하지 못했습니다. 상세 원인과 인식값을 확인하세요.');var key=PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY')||'';failure.safeDetail=redactDiagnosticText_(error.message||'상세 원인 없음',key,500);failure.failurePhase=phase;failure.apiResponseReceived=true;failure.extractedFields={};MADANG.extractionKeys.forEach(function(k){var value=raw.fields&&raw.fields[k];failure.extractedFields[k]=value===null||value===undefined?null:redactDiagnosticText_(String(value),key,1000);});throw failure;}
   return extracted;
 }
 function archiveImage_(image,recordId){
