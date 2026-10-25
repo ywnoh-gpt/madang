@@ -166,7 +166,7 @@ class BrowserWorkflow(unittest.TestCase):
         page.locator('#verifyRegisteredKey').click()
         expect(page.locator('#diagnosticMessage')).to_contain_text('모델 목록 조회에 성공')
         expect(page.locator('#modelPicker')).to_be_visible()
-        page.locator('#modelSelect').select_option('gemini-fixture')
+        page.locator('#modelSelect').select_option('gemini-2.5-flash')
         page.locator('#storeModel').click()
         expect(page.locator('#diagnosticMessage')).to_contain_text('선택한 모델을 저장')
         page.locator('#sheetCheck').click()

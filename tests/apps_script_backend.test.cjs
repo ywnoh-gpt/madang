@@ -95,7 +95,7 @@ test('Gemini connection check verifies an actual marker and keeps failures redac
   result=e.ctx.checkGeminiConnection();assert.equal(result.ok,true);assert.equal(result.status,'CONNECTED');assert.equal(JSON.stringify(result).includes('fixture-credential'),false);
   assert.equal(e.getFetch().url.includes('fixture-credential'),false);assert.equal(e.getFetch().headers['x-goog-api-key'],'fixture-credential');
   assert.equal(e.getFetch().followRedirects,false);
-  e.setFetch({status:429,body:{error:{message:'fixture-credential private error body'}}});result=e.ctx.checkGeminiConnection();assert.equal(result.ok,false);assert.equal(result.status,'HTTP_429');assert.match(result.message,/사용량 한도/);assert.equal(JSON.stringify(result).includes('private error body'),false);
+  e.setFetch({status:429,body:{error:{message:'Rate limit exceeded',metadata:{privateValue:'fixture-credential private error body'}}}});result=e.ctx.checkGeminiConnection();assert.equal(result.ok,false);assert.equal(result.status,'HTTP_429');assert.match(result.message,/사용량 한도/);assert.equal(JSON.stringify(result).includes('private error body'),false);
   e.ctx.UrlFetchApp.fetch=()=>{throw new Error('fixture-credential raw proxy details');};result=e.ctx.checkGeminiConnection();assert.equal(result.status,'NETWORK_ERROR');assert.equal(JSON.stringify(result).includes('fixture-credential'),false);
 });
 

@@ -3,11 +3,11 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {createRuntime}=require('./fixtures/gas_runtime.cjs');
 function rows(e){return JSON.stringify(Object.fromEntries(Object.entries(e.sheets).map(([n,s])=>[n,s.rows])));}
-function metadata(e,status=200){let calls=[];e.ctx.saveApiKey('private-fixture-key');e.ctx.UrlFetchApp.fetch=(url,options)=>{calls.push({url,options});return {getResponseCode:()=>status,getContentText:()=>JSON.stringify({models:[{name:'models/gemini-fixture',displayName:'Fixture Flash',supportedGenerationMethods:['generateContent']},{name:'models/embedding-fixture',supportedGenerationMethods:['embedContent']}],nextPageToken:'next'})};};return calls;}
+function metadata(e,status=200){let calls=[];e.ctx.saveApiKey('private-fixture-key');e.ctx.UrlFetchApp.fetch=(url,options)=>{calls.push({url,options});return {getResponseCode:()=>status,getContentText:()=>JSON.stringify({models:[{name:'models/gemini-2.5-flash',displayName:'Fixture Flash',supportedGenerationMethods:['generateContent']},{name:'models/embedding-fixture',supportedGenerationMethods:['embedContent']}],nextPageToken:'next'})};};return calls;}
 function sheetRuntime(){const e=createRuntime();e.ctx.setupJournal();e.ctx.UrlFetchApp.fetch=()=>{throw new Error('Sheet check must never request Gemini');};return e;}
 
 test('first diagnostic reads available models in one GET and never calls generation or writes sheets',()=>{
- const e=createRuntime(),calls=metadata(e);const r=e.ctx.verifyRegisteredKey();assert.equal(r.ok,true);assert.equal(r.scope,'model_metadata');assert.equal(r.keyVerified,false);assert.equal(r.keyAcceptedForModelList,true);assert.equal(r.models.length,1);assert.equal(r.models[0].id,'gemini-fixture');assert.equal(r.hasMoreModels,true);assert.equal(calls.length,1);assert.equal(calls[0].options.method,'get');assert.equal(calls[0].options.payload,undefined);assert.equal(Object.keys(e.sheets).length,0);assert.equal(e.ctx.getLastDiagnostic().lastDiagnostic.state,'COMPLETED');assert.equal(JSON.stringify(r).includes('private-fixture-key'),false);
+ const e=createRuntime(),calls=metadata(e);const r=e.ctx.verifyRegisteredKey();assert.equal(r.ok,true);assert.equal(r.scope,'model_metadata');assert.equal(r.keyVerified,false);assert.equal(r.keyAcceptedForModelList,true);assert.equal(r.models.length,1);assert.equal(r.models[0].id,'gemini-2.5-flash');assert.equal(r.hasMoreModels,true);assert.equal(calls.length,1);assert.equal(calls[0].options.method,'get');assert.equal(calls[0].options.payload,undefined);assert.equal(Object.keys(e.sheets).length,0);assert.equal(e.ctx.getLastDiagnostic().lastDiagnostic.state,'COMPLETED');assert.equal(JSON.stringify(r).includes('private-fixture-key'),false);
 });
 
 test('missing key and metadata 503 do not trigger generation or retry',()=>{
@@ -39,5 +39,5 @@ test('cleanup throw/no-op cannot pass and existing name collisions are never del
 });
 
 test('model selection only stores a valid ID and never makes a generation request',()=>{
- const e=createRuntime();assert.equal(e.ctx.setModel('gemini-fixture').model,'gemini-fixture');assert.equal(e.props.GEMINI_MODEL,'gemini-fixture');assert.equal(e.getFetch(),undefined);assert.throws(()=>e.ctx.setModel('https://example.com/model'),/모델 ID/);
+ const e=createRuntime();assert.equal(e.ctx.setModel('gemini-2.5-flash').model,'gemini-2.5-flash');assert.equal(e.props.GEMINI_MODEL,'gemini-2.5-flash');assert.equal(e.getFetch(),undefined);assert.throws(()=>e.ctx.setModel('https://example.com/model'),/모델 ID/);
 });

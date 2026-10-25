@@ -13,7 +13,7 @@ const extractionFixture={status:200,body:{candidates:[{content:{parts:[{text:JSO
 const fetchFixture=runtime.ctx.UrlFetchApp.fetch;
 runtime.ctx.UrlFetchApp.fetch=(url,options)=>{
   if(options.method==='get'){
-    runtime.setFetch({status:200,body:{models:[{name:'models/gemini-fixture',displayName:'Fixture Flash',supportedGenerationMethods:['generateContent']}]}});
+    runtime.setFetch({status:200,body:{models:[{name:'models/gemini-2.5-flash',displayName:'Fixture Flash',supportedGenerationMethods:['generateContent']}]}});
     return fetchFixture(url,options);
   }
   if(options.headers['x-goog-api-key']==='browser-timeout-fixture-not-real')throw new Error('Timeout: https://generativelanguage.googleapis.com/test?key=browser-timeout-fixture-not-real');

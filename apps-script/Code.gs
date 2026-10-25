@@ -30,7 +30,10 @@ function configureModel() {
   var ui=SpreadsheetApp.getUi();var response=ui.prompt('인식 모델 설정','사용 가능한 Gemini 모델 ID를 입력하세요. 기본값: gemini-flash-latest',ui.ButtonSet.OK_CANCEL);
   if(response.getSelectedButton()!==ui.Button.OK)return;
   var value=String(response.getResponseText()).trim();if(!/^[a-zA-Z0-9._-]+$/.test(value))throw new Error('모델 ID를 확인하세요.');
-  PropertiesService.getScriptProperties().setProperty('GEMINI_MODEL',value);ui.alert('모델 설정을 저장했습니다.');
+  setModel(value);ui.alert('모델 설정을 저장했습니다.');
+}
+function isDocumentModel_(id){
+  return typeof id==='string'&&/^gemini-(?:\d+(?:\.\d+)?-)?(?:flash(?:-lite)?|pro)(?:-[a-z0-9.-]+)?$/i.test(id)&&!/(?:tts|audio|image|live|computer-use|customtools|robotics|transcribe|banana|deep-research|antigravity|thinking)/i.test(id);
 }
 function getSetupStatus() {
   var props=PropertiesService.getScriptProperties();
@@ -66,14 +69,14 @@ function recordedDiagnostic_(stage,fn) {
   catch(error){report={mode:'live',ok:false,status:error.diagnosticCode||'DIAGNOSTIC_FAILED',message:error.diagnosticCode?error.message:'점검을 완료하지 못했습니다. Google 실행 내역과 마지막 점검 기록을 확인하세요.',keyVerified:false};if(error.safeDetail)report.safeDetail=error.safeDetail;}
   report.keyVerified=stage==='api_generation'&&report.status==='CONNECTED'&&report.ok===true;report.model=report.model||marker.model;report.scope=stage;report.keySource=report.keySource||(stage==='sheet_roundtrip'?'미사용 (시트 전용 점검)':'Apps Script 속성');report.checkedAt=new Date().toISOString();
   var current;try{current=JSON.parse(properties.getProperty('MADANG_LAST_DIAGNOSTIC')||'null');}catch(invalid){current=null;}
-  if(current&&current.id===marker.id){marker.state='COMPLETED';marker.finishedAt=report.checkedAt;marker.ok=report.ok===true;marker.status=report.status||'';marker.message=String(report.message||'').slice(0,1200);marker.keyVerified=report.keyVerified===true;marker.keyAcceptedForModelList=report.keyAcceptedForModelList===true;properties.setProperty('MADANG_LAST_DIAGNOSTIC',JSON.stringify(marker));}
+  if(current&&current.id===marker.id){marker.state='COMPLETED';marker.finishedAt=report.checkedAt;marker.ok=report.ok===true;marker.status=report.status||'';marker.message=String(report.message||'').slice(0,1200);marker.keyVerified=report.keyVerified===true;marker.keyAcceptedForModelList=report.keyAcceptedForModelList===true;if(report.googleError)marker.googleError=report.googleError;properties.setProperty('MADANG_LAST_DIAGNOSTIC',JSON.stringify(marker));}
   return report;
 }
 function getLastDiagnostic() {
   var last;try{last=JSON.parse(PropertiesService.getUserProperties().getProperty('MADANG_LAST_DIAGNOSTIC')||'null');}catch(invalid){last=null;}
   if(!last)return {mode:'live',ok:false,status:'NO_DIAGNOSTIC',keySource:'Apps Script 속성',message:'아직 점검 기록이 없습니다.'};
   var unfinished=last.state==='RUNNING';
-  return {mode:'live',ok:!unfinished&&last.ok===true,status:unfinished?'NO_COMPLETION':last.status,scope:last.stage,model:last.model,keySource:'Apps Script 속성',keyVerified:!unfinished&&last.keyVerified===true,keyAcceptedForModelList:!unfinished&&last.keyAcceptedForModelList===true,message:unfinished?'마지막 단계: '+last.stageLabel+'. 시작 기록은 있으나 종료 기록이 없습니다. 진행 중이거나 Google 실행 제한으로 종료됐을 수 있습니다. Apps Script 실행 내역을 확인하고 중복 실행하지 마세요.':last.message,lastDiagnostic:last};
+  return {mode:'live',ok:!unfinished&&last.ok===true,status:unfinished?'NO_COMPLETION':last.status,scope:last.stage,model:last.model,googleError:last.googleError||null,keySource:'Apps Script 속성',keyVerified:!unfinished&&last.keyVerified===true,keyAcceptedForModelList:!unfinished&&last.keyAcceptedForModelList===true,message:unfinished?'마지막 단계: '+last.stageLabel+'. 시작 기록은 있으나 종료 기록이 없습니다. 진행 중이거나 Google 실행 제한으로 종료됐을 수 있습니다. Apps Script 실행 내역을 확인하고 중복 실행하지 마세요.':last.message,lastDiagnostic:last};
 }
 function verifyRegisteredKey() {return recordedDiagnostic_('model_metadata',function(){
   var props=PropertiesService.getScriptProperties();if(!props.getProperty('GEMINI_API_KEY'))return {mode:'live',ok:false,status:'MISSING_KEY',keyVerified:false,message:'등록된 키가 없습니다.'};
@@ -82,6 +85,7 @@ function verifyRegisteredKey() {return recordedDiagnostic_('model_metadata',func
 });}
 function setModel(model) {
   if(typeof model!=='string'||model.length>150||!/^[a-zA-Z0-9._-]+$/.test(model))throw new Error('모델 ID를 확인하세요.');
+  if(!isDocumentModel_(model))throw new Error('문서 인식용 일반 Gemini Flash·Flash-Lite·Pro 모델을 선택하세요. 음성·이미지 생성 등 전용 모델은 이 앱에서 지원하지 않습니다.');
   PropertiesService.getScriptProperties().setProperty('GEMINI_MODEL',model);return getSetupStatus();
 }
 function verifySheetReadWrite(){return recordedDiagnostic_('sheet_roundtrip',function(){
@@ -119,6 +123,25 @@ function showRegisteredKeyVerification(){
   return result;
 }
 function diagnosticError_(code,message){var error=new Error(message);error.diagnosticCode=code;return error;}
+function redactDiagnosticText_(value,key,maxLength){
+  var safe=String(value||'');
+  [key,encodeURIComponent(key||'')].filter(Boolean).forEach(function(secret){safe=safe.split(secret).join('[키 숨김]');});
+  return safe.replace(/https?:\/\/[^\s<>"']+/gi,'[URL 숨김]').replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[이메일 숨김]').replace(/[A-Za-z0-9_+\/=.-]{24,}/g,'[식별값 숨김]').slice(0,maxLength||400);
+}
+function googleHttpFailure_(response,model,key){
+  var code=response.getResponseCode(),detail={httpStatus:code,apiVersion:'v1beta',action:'generateContent',model:model};
+  try{
+    var body=JSON.parse(response.getContentText());var upstream=body&&body.error;
+    if(upstream&&typeof upstream==='object'){
+      if(typeof upstream.status==='string'&&/^[A-Z][A-Z0-9_]{0,79}$/.test(upstream.status))detail.status=upstream.status;
+      if(typeof upstream.message==='string')detail.message=redactDiagnosticText_(upstream.message,key,600);
+      if(Array.isArray(upstream.details)){var info=upstream.details.find(function(item){return item&&item['@type']==='type.googleapis.com/google.rpc.ErrorInfo';});if(info&&typeof info.reason==='string'&&/^[A-Z][A-Z0-9_]{0,79}$/.test(info.reason))detail.reason=info.reason;}
+    }
+  }catch(unreadable){/* Never expose arbitrary raw response bodies or metadata. */}
+  var help=code===503?'실행 시간 초과를 피하기 위해 자동 재시도하지 않습니다.':code===429?'사용량 한도·결제·재시도 가능 시간을 확인하세요.':code===401||code===403?'API 키의 유효성과 Gemini API 접근 권한을 확인하세요.':code===404?'Google의 원문 설명으로 모델과 API 지원 여부를 확인해야 합니다.':'Google의 원문 설명으로 요청 거부 이유를 확인해야 합니다.';
+  var message='Gemini 요청에 실패했습니다 (HTTP '+code+', 모델 '+model+'). '+help+(detail.message?' Google 설명: '+detail.message:' Google 오류 설명을 읽지 못했습니다.');
+  var error=diagnosticError_('HTTP_'+code,message);error.googleError=detail;return error;
+}
 function fetchFailure_(error,key) {
   var original='';try{original=String(error&&error.message||error||'');}catch(unreadable){original='';}
   var safe=original;
@@ -142,20 +165,20 @@ function probeGeminiMetadata_() {
     var code=response.getResponseCode();if(code!==200)return {ok:false,status:'HTTP_'+code,message:'읽기 전용 모델 목록 점검 응답: HTTP '+code+'. 생성 요청의 권한·상태와 별도로 해석해야 합니다.'};
     var body;try{body=JSON.parse(response.getContentText());}catch(invalid){return {ok:false,status:'INVALID_RESPONSE',message:'모델 목록 응답을 읽지 못했습니다.'};}
     if(!body||!Array.isArray(body.models))return {ok:false,status:'INVALID_RESPONSE',message:'정상 모델 목록 응답인지 확인하지 못했습니다.'};
-    var available=body.models.filter(function(model){return model&&Array.isArray(model.supportedGenerationMethods)&&model.supportedGenerationMethods.indexOf('generateContent')>=0&&typeof model.name==='string';}).map(function(model){return {id:model.name.replace(/^models\//,''),displayName:String(model.displayName||model.name).slice(0,150)};}).filter(function(model){return /^[a-zA-Z0-9._-]+$/.test(model.id);});
+    var available=body.models.filter(function(model){return model&&Array.isArray(model.supportedGenerationMethods)&&model.supportedGenerationMethods.indexOf('generateContent')>=0&&typeof model.name==='string';}).map(function(model){return {id:model.name.replace(/^models\//,''),displayName:String(model.displayName||model.name).slice(0,150)};}).filter(function(model){return isDocumentModel_(model.id);});
     return {ok:true,status:'MODEL_LIST_ACCESSIBLE',models:available.slice(0,100),hasMoreModels:Boolean(body.nextPageToken),message:'같은 키로 Google 모델 목록은 조회했습니다. 생성 요청의 시간 초과·모델 상태·접근 권한은 별도 확인이 필요합니다.'};
   }catch(error){var failure=fetchFailure_(error,key);return {ok:false,status:failure.diagnosticCode,message:failure.message,safeDetail:failure.safeDetail};}
 }
 function requestGeminiJson_(parts,schema) {
   var props=PropertiesService.getScriptProperties();var key=props.getProperty('GEMINI_API_KEY');if(!key)throw diagnosticError_('MISSING_KEY','Gemini API 키를 먼저 등록하세요.');
   var model=props.getProperty('GEMINI_MODEL')||'gemini-flash-latest';if(!/^[a-zA-Z0-9._-]+$/.test(model))throw diagnosticError_('INVALID_MODEL','인식 모델 설정을 확인하세요.');
+  if(!isDocumentModel_(model))throw diagnosticError_('UNSUPPORTED_DOCUMENT_MODEL','현재 모델 '+model+'은 이 앱의 문서 인식·JSON 응답 점검용이 아닙니다. 일반 Gemini Flash·Flash-Lite·Pro 모델을 선택해 저장하세요.');
   var response;
   var options={method:'post',contentType:'application/json',headers:{'x-goog-api-key':key},payload:JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,maxOutputTokens:8192,responseMimeType:'application/json',responseSchema:schema}}),followRedirects:false,muteHttpExceptions:true};
   try {response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',options);}
   catch(networkError){throw fetchFailure_(networkError,key);}
   var code=response.getResponseCode();
-  if(code===503)throw diagnosticError_('HTTP_503','Gemini 서비스가 요청을 처리하지 못했습니다 (HTTP 503). 실행 시간 초과를 피하기 위해 자동 재시도하지 않습니다. 등록 키·모델 조회에서 사용 가능한 모델을 확인한 뒤 한 단계씩 다시 점검하세요. 이 오류로 키 유효성을 판단할 수는 없습니다.');
-  if(code!==200){var help=code===429?'사용량 한도·결제·재시도 가능 시간을 확인하세요.':code===401||code===403?'API 키의 유효성과 Gemini API 접근 권한을 확인하세요.':code===404?'계정에서 사용 가능한 모델인지 확인하세요.':'API 키·모델·요청 형식을 확인하세요.';throw diagnosticError_('HTTP_'+code,'Gemini 요청에 실패했습니다 (HTTP '+code+'). '+help+' 입력과 원본 자료는 유지됩니다.');}
+  if(code!==200)throw googleHttpFailure_(response,model,key);
   var body;try{body=JSON.parse(response.getContentText());}catch(invalidBody){throw diagnosticError_('INVALID_RESPONSE','인식 서버 응답을 읽을 수 없습니다. 다시 시도하세요.');}
   var candidate=body&&body.candidates&&body.candidates[0];var text=candidate&&candidate.content&&candidate.content.parts?candidate.content.parts.map(function(part){return part.text||'';}).join(''):'';
   if(!text)throw diagnosticError_('EMPTY_RESPONSE','인식 결과가 비어 있습니다. 자료 또는 모델을 확인하고 다시 시도하세요.');
@@ -172,6 +195,7 @@ function checkGeminiConnection_() {
     return {mode:'live',ok:true,status:'CONNECTED',model:model,message:'Gemini API에 실제 연결했고 점검 응답을 확인했습니다. Google 시트 권한은 별도입니다.'};
   } catch(error) {
     var failed={mode:'live',ok:false,status:error.diagnosticCode||'CHECK_FAILED',model:model,message:error.diagnosticCode?error.message:'연결 점검에 실패했습니다. Google 외부 요청 권한과 API 설정을 확인하세요.'};
+    if(error.googleError)failed.googleError=error.googleError;
     if(error.transportFailure){failed.safeDetail=error.safeDetail;}
     return failed;
   }
@@ -191,7 +215,7 @@ function runSampleCheck_() {
     var extracted=extractDocuments([samplePdfDocument_()]);var normalized=normalizeFields_(extracted.fields,false);var checks=['caseNumber','itemNumber','auctionDate','appraisal','minimumPrice'].map(function(key){return {field:key,expected:expected[key],actual:normalized[key],passed:normalized[key]===expected[key]};});
     var passed=checks.every(function(check){return check.passed;});
     return {mode:'live',ok:passed,expected:expected,extracted:extracted.fields,checks:checks,warnings:extracted.warnings,message:(passed?'합성 PDF의 점검 항목이 모두 일치했습니다.':'합성 PDF를 인식했지만 일부 점검 항목이 일치하지 않습니다.')+' 점검 자료는 기록장과 Drive에 저장하지 않았습니다.'};
-  } catch(error) {return {mode:'live',ok:false,status:error.diagnosticCode||'SAMPLE_FAILED',expected:expected,extracted:null,checks:[],warnings:[],safeDetail:error.safeDetail||'',message:error.diagnosticCode?error.message:'샘플 자료 점검에 실패했습니다. API 연결과 모델 설정을 확인하세요.'};}
+  } catch(error) {return {mode:'live',ok:false,status:error.diagnosticCode||'SAMPLE_FAILED',expected:expected,extracted:null,checks:[],warnings:[],googleError:error.googleError||null,safeDetail:error.safeDetail||'',message:error.diagnosticCode?error.message:'샘플 자료 점검에 실패했습니다. API 연결과 모델 설정을 확인하세요.'};}
 }
 function runLocalSelfCheck() {
   var checks=[];var check=function(id,label,fn){var passed=false;try{passed=fn()===true;}catch(failure){passed=false;}checks.push({id:id,label:label,passed:passed});};
