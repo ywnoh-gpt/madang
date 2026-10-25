@@ -13,7 +13,7 @@ const extractionFixture={status:200,body:{candidates:[{content:{parts:[{text:JSO
 const fetchFixture=runtime.ctx.UrlFetchApp.fetch;
 runtime.ctx.UrlFetchApp.fetch=(url,options)=>{
   if(options.method==='get'){
-    runtime.setFetch({status:200,body:{models:[{name:'models/test-fixture'}]}});
+    runtime.setFetch({status:200,body:{models:[{name:'models/gemini-fixture',displayName:'Fixture Flash',supportedGenerationMethods:['generateContent']}]}});
     return fetchFixture(url,options);
   }
   if(options.headers['x-goog-api-key']==='browser-timeout-fixture-not-real')throw new Error('Timeout: https://generativelanguage.googleapis.com/test?key=browser-timeout-fixture-not-real');
@@ -38,7 +38,7 @@ function runner(success, failure) {
     };
   }});
 }`;
-const allowed = new Set(['setupJournal','getAppState','extractDocuments','extractScreenshot','saveReviewedRecord','updateResult','refreshJournal','getSetupStatus','saveApiKey','checkGeminiConnection','runSampleCheck','runLocalSelfCheck','verifyRegisteredKey']);
+const allowed = new Set(['setupJournal','getAppState','extractDocuments','extractScreenshot','saveReviewedRecord','updateResult','refreshJournal','getSetupStatus','saveApiKey','checkGeminiConnection','runSampleCheck','runLocalSelfCheck','verifyRegisteredKey','verifySheetReadWrite','getLastDiagnostic','setModel']);
 const server = http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.method==='GET'&&req.url==='/'){

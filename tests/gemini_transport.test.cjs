@@ -27,9 +27,9 @@ test('Apps Script permission and URL Fetch quotas have actionable distinct error
 
 test('timeout can be separated from a working read-only API route without claiming key generation access',()=>{
   const e=failing('Timeout: https://generativelanguage.googleapis.com/v1beta/models/test:generateContent');
-  const result=e.runtime.ctx.verifyRegisteredKey();
+  const result=e.runtime.ctx.checkGeminiConnection();
   assert.equal(result.status,'FETCH_TIMEOUT');assert.equal(result.keyVerified,false);assert.equal(result.ok,false);
-  assert.equal(result.metadataProbe.status,'MODEL_LIST_ACCESSIBLE');assert.equal(result.metadataProbe.ok,true);
+  const metadata=e.runtime.ctx.verifyRegisteredKey();assert.equal(metadata.status,'MODEL_LIST_ACCESSIBLE');assert.equal(metadata.ok,true);assert.equal(metadata.keyVerified,false);
   assert.deepEqual(e.calls.map(call=>call.options.method),['post','get']);
   assert.equal(e.calls[1].options.payload,undefined);assert.equal(e.calls[1].options.headers['x-goog-api-key'],'transport-fixture-not-real');assert.equal(e.calls[1].options.followRedirects,false);
   assert.equal(Object.keys(e.runtime.sheets).length,3);assert.equal(e.runtime.ctx.getAppState().records.length,0);
@@ -51,8 +51,8 @@ test('unknown exception diagnostics redact keys, encoded keys, URLs, emails and 
 
 test('metadata failure or malformed response remains separate from the generation exception',()=>{
   const e=failing('Request timed out',403);let result=e.runtime.ctx.checkGeminiConnection();
-  assert.equal(result.status,'FETCH_TIMEOUT');assert.equal(result.metadataProbe.status,'HTTP_403');assert.equal(result.metadataProbe.ok,false);
-  e.runtime.ctx.UrlFetchApp.fetch=()=>{throw new Error('DNS error for private location');};result=e.runtime.ctx.checkGeminiConnection();assert.equal(result.status,'FETCH_DNS');assert.equal(result.metadataProbe.status,'FETCH_DNS');
+  assert.equal(result.status,'FETCH_TIMEOUT');const metadata=e.runtime.ctx.verifyRegisteredKey();assert.equal(metadata.status,'HTTP_403');assert.equal(metadata.ok,false);
+  e.runtime.ctx.UrlFetchApp.fetch=()=>{throw new Error('DNS error for private location');};result=e.runtime.ctx.checkGeminiConnection();assert.equal(result.status,'FETCH_DNS');assert.equal(e.runtime.ctx.verifyRegisteredKey().status,'FETCH_DNS');
   const malformed=failing('Timeout');malformed.runtime.ctx.UrlFetchApp.fetch=(url,options)=>{if(options.method==='post')throw new Error('Timeout');return {getResponseCode:()=>200,getContentText:()=>'<html>not JSON</html>'};};
-  assert.equal(malformed.runtime.ctx.checkGeminiConnection().metadataProbe.status,'INVALID_RESPONSE');
+  assert.equal(malformed.runtime.ctx.verifyRegisteredKey().status,'INVALID_RESPONSE');
 });

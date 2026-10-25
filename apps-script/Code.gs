@@ -10,7 +10,7 @@ var MADANG = {
 };
 
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('마당 기록장').addItem('기록장 열기', 'showSidebar').addItem('최초 시트 준비', 'setupJournal').addItem('연결 상태 점검', 'showSetupDiagnostics').addItem('등록된 키로 실제 전체 점검', 'showRegisteredKeyVerification').addItem('계산·성과 새로고침', 'refreshJournal').addItem('Gemini API 키 설정', 'configureApiKey').addItem('인식 모델 설정', 'configureModel').addToUi();
+  SpreadsheetApp.getUi().createMenu('마당 기록장').addItem('기록장 열기', 'showSidebar').addItem('최초 시트 준비', 'setupJournal').addItem('연결 상태 점검', 'showSetupDiagnostics').addItem('등록 키·모델 조회', 'showRegisteredKeyVerification').addItem('계산·성과 새로고침', 'refreshJournal').addItem('Gemini API 키 설정', 'configureApiKey').addItem('인식 모델 설정', 'configureModel').addToUi();
 }
 function showSidebar() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutputFromFile('Index').setTitle('마당 · 모의 입찰'));
@@ -56,22 +56,38 @@ function showSetupDiagnostics() {
   var status=getSetupStatus();var ui=SpreadsheetApp.getUi();
   ui.alert('마당 연결 상태', '기록장 시트: '+(status.configured?'준비됨':'확인 필요')+'\nGemini API 키: '+(status.keyPresent?'등록됨 (연결은 별도 점검)':'미등록')+'\n모델: '+status.model+'\n\n'+status.oauthNote, ui.ButtonSet.OK);
 }
-function verifyRegisteredKey() {
-  var report={mode:'live',ok:false,status:'PENDING',message:'등록된 키와 연동 상태를 점검합니다.',checkedAt:new Date().toISOString(),model:'unknown',keySource:'Apps Script 속성',keyVerified:false,checks:[]};
-  var setup;
-  try{setup=getSetupStatus();report.model=setup.model;}catch(setupError){report.status='SETUP_CHECK_FAILED';report.message='Google 권한과 스크립트 속성을 확인하지 못했습니다. 먼저 최초 시트 준비를 실행하세요.';return report;}
-  report.checks.push({label:'기록장 시트 준비',passed:setup.configured,message:setup.configured?'기존 전용 탭 구성을 확인했습니다.':'최초 시트 준비와 Google 권한 승인을 먼저 확인하세요.'});
-  if(!setup.configured){report.status='SETUP_REQUIRED';report.message='실제 점검 전에 최초 시트 준비와 Google 권한 승인이 필요합니다.';return report;}
-  report.checks.push({label:'등록된 API 키 존재',passed:setup.keyPresent,message:setup.keyPresent?'스크립트 속성의 키를 사용합니다. 유효성은 다음 단계에서 확인합니다.':'스크립트 속성 GEMINI_API_KEY가 비어 있습니다.'});
-  if(!setup.keyPresent){report.status='MISSING_KEY';report.message='이 Apps Script에 API 키를 먼저 등록하세요.';return report;}
-  var connection=checkGeminiConnection();var connected=connection.mode==='live'&&connection.ok===true;
-  if(connection.safeDetail)report.safeDetail=connection.safeDetail;if(connection.metadataProbe)report.metadataProbe=connection.metadataProbe;
-  report.checks.push({label:'등록된 키로 Gemini 실제 연결',passed:connected,message:connection.message});
-  if(!connected){report.status=connection.status||'CONNECTION_FAILED';report.message='실제 Gemini 연결을 확인하지 못해 PDF·시트 쓰기 점검은 실행하지 않았습니다. '+connection.message;return report;}
-  report.keyVerified=true;
-  var sample=runSampleCheck();var samplePassed=sample.mode==='live'&&sample.ok===true;
-  report.checks.push({label:'합성 PDF 실제 인식',passed:samplePassed,message:sample.message});
-  if(!samplePassed){report.status=sample.status||'SAMPLE_CHECK_FAILED';report.message='키 연결은 확인했지만 PDF 인식 점검이 완료되지 않아 시트 쓰기는 실행하지 않았습니다. '+sample.message;return report;}
+function recordedDiagnostic_(stage,fn) {
+  var properties=PropertiesService.getUserProperties();
+  var labels={model_metadata:'등록 키·모델 조회',api_generation:'API 응답',pdf_generation:'PDF 인식',sheet_roundtrip:'시트 쓰기·읽기'};
+  var marker={id:Utilities.getUuid(),stage:stage,stageLabel:labels[stage]||stage,state:'RUNNING',startedAt:new Date().toISOString(),model:PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL')||'gemini-flash-latest'};
+  properties.setProperty('MADANG_LAST_DIAGNOSTIC',JSON.stringify(marker));
+  var report;
+  try {report=fn();}
+  catch(error){report={mode:'live',ok:false,status:error.diagnosticCode||'DIAGNOSTIC_FAILED',message:error.diagnosticCode?error.message:'점검을 완료하지 못했습니다. Google 실행 내역과 마지막 점검 기록을 확인하세요.',keyVerified:false};if(error.safeDetail)report.safeDetail=error.safeDetail;}
+  report.keyVerified=stage==='api_generation'&&report.status==='CONNECTED'&&report.ok===true;report.model=report.model||marker.model;report.scope=stage;report.keySource=report.keySource||(stage==='sheet_roundtrip'?'미사용 (시트 전용 점검)':'Apps Script 속성');report.checkedAt=new Date().toISOString();
+  var current;try{current=JSON.parse(properties.getProperty('MADANG_LAST_DIAGNOSTIC')||'null');}catch(invalid){current=null;}
+  if(current&&current.id===marker.id){marker.state='COMPLETED';marker.finishedAt=report.checkedAt;marker.ok=report.ok===true;marker.status=report.status||'';marker.message=String(report.message||'').slice(0,1200);marker.keyVerified=report.keyVerified===true;marker.keyAcceptedForModelList=report.keyAcceptedForModelList===true;properties.setProperty('MADANG_LAST_DIAGNOSTIC',JSON.stringify(marker));}
+  return report;
+}
+function getLastDiagnostic() {
+  var last;try{last=JSON.parse(PropertiesService.getUserProperties().getProperty('MADANG_LAST_DIAGNOSTIC')||'null');}catch(invalid){last=null;}
+  if(!last)return {mode:'live',ok:false,status:'NO_DIAGNOSTIC',keySource:'Apps Script 속성',message:'아직 점검 기록이 없습니다.'};
+  var unfinished=last.state==='RUNNING';
+  return {mode:'live',ok:!unfinished&&last.ok===true,status:unfinished?'NO_COMPLETION':last.status,scope:last.stage,model:last.model,keySource:'Apps Script 속성',keyVerified:!unfinished&&last.keyVerified===true,keyAcceptedForModelList:!unfinished&&last.keyAcceptedForModelList===true,message:unfinished?'마지막 단계: '+last.stageLabel+'. 시작 기록은 있으나 종료 기록이 없습니다. 진행 중이거나 Google 실행 제한으로 종료됐을 수 있습니다. Apps Script 실행 내역을 확인하고 중복 실행하지 마세요.':last.message,lastDiagnostic:last};
+}
+function verifyRegisteredKey() {return recordedDiagnostic_('model_metadata',function(){
+  var props=PropertiesService.getScriptProperties();if(!props.getProperty('GEMINI_API_KEY'))return {mode:'live',ok:false,status:'MISSING_KEY',keyVerified:false,message:'등록된 키가 없습니다.'};
+  var probe=probeGeminiMetadata_();
+  return {mode:'live',ok:probe.ok,status:probe.status,keyVerified:false,keyAcceptedForModelList:probe.ok,model:props.getProperty('GEMINI_MODEL')||'gemini-flash-latest',models:probe.models||[],hasMoreModels:probe.hasMoreModels||false,safeDetail:probe.safeDetail||'',message:probe.ok?'등록된 키로 모델 목록 조회에 성공했습니다. API 응답·PDF 인식·시트 저장은 각각의 버튼에서 따로 확인하세요.':probe.message};
+});}
+function setModel(model) {
+  if(typeof model!=='string'||model.length>150||!/^[a-zA-Z0-9._-]+$/.test(model))throw new Error('모델 ID를 확인하세요.');
+  PropertiesService.getScriptProperties().setProperty('GEMINI_MODEL',model);return getSetupStatus();
+}
+function verifySheetReadWrite(){return recordedDiagnostic_('sheet_roundtrip',function(){
+  var setup=getSetupStatus();var report={mode:'live',ok:false,status:'PENDING',keyVerified:false,model:setup.model,checks:[]};
+  if(!setup.configured){report.status='SETUP_REQUIRED';report.message='먼저 최초 시트 준비를 실행하세요.';return report;}
+  var sample={extracted:{caseNumber:'2030-TEST-42',itemNumber:'1',auctionDate:'2030-10-22',appraisal:200000000,minimumPrice:140000000}};
   var temporarySheet=null;var temporaryName='';var book=null;
   try{
     book=book_();temporaryName='_마당_연동점검_'+String(Utilities.getUuid()).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,32);
@@ -85,20 +101,21 @@ function verifyRegisteredKey() {
     var actual=temporarySheet.getRange(1,1,2,headers.length).getValues();
     var matches=JSON.stringify(actual)===JSON.stringify(values)&&typeof actual[1][4]==='number'&&typeof actual[1][5]==='number';
     report.checks.push({label:'임시 시트 쓰기·읽기 일치',passed:matches,message:matches?'합성 자료를 새 임시 탭에 쓰고 숫자 형식까지 다시 읽어 확인했습니다.':'임시 탭의 저장값 또는 숫자 형식이 예상과 다릅니다.'});
-    report.ok=matches;report.status=matches?'VERIFIED':'SHEET_READBACK_MISMATCH';report.message=matches?'등록된 키의 실제 Gemini 연결·PDF 인식·Google 시트 쓰기/읽기를 확인했습니다.':'Gemini 연결과 PDF 인식은 확인했지만 시트 저장값 검증에 실패했습니다.';
-  }catch(sheetError){report.status='SHEET_CHECK_FAILED';report.message='Gemini 연결과 PDF 인식은 확인했지만 임시 시트 쓰기·읽기에 실패했습니다. Google 시트 권한과 사용량을 확인하세요.';report.checks.push({label:'임시 시트 쓰기·읽기 일치',passed:false,message:'시트 읽기·쓰기 작업을 완료하지 못했습니다.'});}
+    report.ok=matches;report.status=matches?'VERIFIED':'SHEET_READBACK_MISMATCH';report.message=matches?'Google 시트 쓰기·읽기와 임시 탭 정리를 확인했습니다. Gemini 인식은 별도 점검입니다.':'Google 시트 저장값 검증에 실패했습니다.';
+  }catch(sheetError){report.status='SHEET_CHECK_FAILED';report.message='임시 시트 쓰기·읽기에 실패했습니다. Google 시트 권한과 사용량을 확인하세요.';report.checks.push({label:'임시 시트 쓰기·읽기 일치',passed:false,message:'시트 읽기·쓰기 작업을 완료하지 못했습니다.'});}
   finally{
     if(temporarySheet){
       try{book.deleteSheet(temporarySheet);SpreadsheetApp.flush();if(book.getSheetByName(temporaryName))throw new Error('temporary-sheet-still-present');report.checks.push({label:'생성한 임시 시트 정리',passed:true,message:'이번 점검이 만든 임시 탭만 삭제하고 제거된 것을 확인했습니다. 실제 기록은 수정하지 않았습니다.'});}
-      catch(cleanupError){report.ok=false;report.status='CLEANUP_FAILED';report.cleanupNeeded=temporaryName;report.message='Gemini·시트 점검 후 임시 탭 정리가 완료되지 않았습니다. '+temporaryName+' 탭을 직접 확인해 삭제하세요. 실제 기록은 수정하지 않았습니다.';report.checks.push({label:'생성한 임시 시트 정리',passed:false,message:'임시 탭 정리가 필요합니다.'});}
+      catch(cleanupError){report.ok=false;report.status='CLEANUP_FAILED';report.cleanupNeeded=temporaryName;report.message='시트 점검 후 임시 탭 정리가 완료되지 않았습니다. '+temporaryName+' 탭을 직접 확인해 삭제하세요. 실제 기록은 수정하지 않았습니다.';report.checks.push({label:'생성한 임시 시트 정리',passed:false,message:'임시 탭 정리가 필요합니다.'});}
     }
     report.checkedAt=new Date().toISOString();
   }
   return report;
+  });
 }
 function showRegisteredKeyVerification(){
-  var result=verifyRegisteredKey();var ui=SpreadsheetApp.getUi();var detail=result.checks.map(function(check){return (check.passed?'✓ ':'✕ ')+check.label;}).join('\n');
-  ui.alert('등록된 키 실제 연동 점검',result.message+'\n\n'+detail+'\n\n점검 방식: 실제 연동 / 모델: '+result.model+'\n키 출처: '+result.keySource,ui.ButtonSet.OK);
+  var result=verifyRegisteredKey();var ui=SpreadsheetApp.getUi();var detail=(result.checks||[]).map(function(check){return (check.passed?'✓ ':'✕ ')+check.label;}).join('\n');
+  ui.alert('등록 키·모델 조회',result.message+'\n\n'+detail+'\n\n점검 방식: 실제 연동 / 모델: '+result.model+'\n키 출처: '+result.keySource,ui.ButtonSet.OK);
   return result;
 }
 function diagnosticError_(code,message){var error=new Error(message);error.diagnosticCode=code;return error;}
@@ -121,43 +138,23 @@ function probeGeminiMetadata_() {
   var key=PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if(!key)return {ok:false,status:'MISSING_KEY',message:'등록된 키가 없습니다.'};
   try{
-    var response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',{method:'get',headers:{'x-goog-api-key':key},followRedirects:false,muteHttpExceptions:true});
+    var response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100',{method:'get',headers:{'x-goog-api-key':key},followRedirects:false,muteHttpExceptions:true});
     var code=response.getResponseCode();if(code!==200)return {ok:false,status:'HTTP_'+code,message:'읽기 전용 모델 목록 점검 응답: HTTP '+code+'. 생성 요청의 권한·상태와 별도로 해석해야 합니다.'};
     var body;try{body=JSON.parse(response.getContentText());}catch(invalid){return {ok:false,status:'INVALID_RESPONSE',message:'모델 목록 응답을 읽지 못했습니다.'};}
     if(!body||!Array.isArray(body.models))return {ok:false,status:'INVALID_RESPONSE',message:'정상 모델 목록 응답인지 확인하지 못했습니다.'};
-    return {ok:true,status:'MODEL_LIST_ACCESSIBLE',message:'같은 키로 Google 모델 목록은 조회했습니다. 생성 요청의 시간 초과·모델 상태·접근 권한은 별도 확인이 필요합니다.'};
+    var available=body.models.filter(function(model){return model&&Array.isArray(model.supportedGenerationMethods)&&model.supportedGenerationMethods.indexOf('generateContent')>=0&&typeof model.name==='string';}).map(function(model){return {id:model.name.replace(/^models\//,''),displayName:String(model.displayName||model.name).slice(0,150)};}).filter(function(model){return /^[a-zA-Z0-9._-]+$/.test(model.id);});
+    return {ok:true,status:'MODEL_LIST_ACCESSIBLE',models:available.slice(0,100),hasMoreModels:Boolean(body.nextPageToken),message:'같은 키로 Google 모델 목록은 조회했습니다. 생성 요청의 시간 초과·모델 상태·접근 권한은 별도 확인이 필요합니다.'};
   }catch(error){var failure=fetchFailure_(error,key);return {ok:false,status:failure.diagnosticCode,message:failure.message,safeDetail:failure.safeDetail};}
-}
-function unavailableRetryDelay_(response,attempt) {
-  var delay=1000*Math.pow(2,attempt),headers={};
-  try{headers=response.getAllHeaders()||{};}catch(noHeaders){/* A response without a retry hint uses bounded backoff. */}
-  var names=Object.keys(headers).filter(function(name){return name.toLowerCase()==='retry-after';});
-  if(names.length){
-    var value=headers[names[0]];if(Array.isArray(value))value=value[0];value=String(value).trim();
-    var requested;
-    if(/^\d+$/.test(value))requested=Number(value)*1000;
-    else if(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/i.test(value))requested=Date.parse(value)-Date.now();
-    else return null;
-    // Do not shorten a server-requested wait or guess at an invalid retry hint.
-    if(!isFinite(requested)||requested>10000)return null;
-    delay=Math.max(delay,requested,0);
-  }
-  return Math.min(10000,delay+Math.floor(Math.random()*250));
 }
 function requestGeminiJson_(parts,schema) {
   var props=PropertiesService.getScriptProperties();var key=props.getProperty('GEMINI_API_KEY');if(!key)throw diagnosticError_('MISSING_KEY','Gemini API 키를 먼저 등록하세요.');
   var model=props.getProperty('GEMINI_MODEL')||'gemini-flash-latest';if(!/^[a-zA-Z0-9._-]+$/.test(model))throw diagnosticError_('INVALID_MODEL','인식 모델 설정을 확인하세요.');
   var response;
-  var options={method:'post',contentType:'application/json',headers:{'x-goog-api-key':key},payload:JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:schema}}),followRedirects:false,muteHttpExceptions:true};
-  for(var attempt=0;attempt<3;attempt++){
-    try {response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',options);}
-    catch(networkError){throw fetchFailure_(networkError,key);}
-    if(response.getResponseCode()!==503||attempt===2)break;
-    var retryDelay=unavailableRetryDelay_(response,attempt);if(retryDelay===null)break;
-    Utilities.sleep(retryDelay);
-  }
+  var options={method:'post',contentType:'application/json',headers:{'x-goog-api-key':key},payload:JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,maxOutputTokens:8192,responseMimeType:'application/json',responseSchema:schema}}),followRedirects:false,muteHttpExceptions:true};
+  try {response=UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',options);}
+  catch(networkError){throw fetchFailure_(networkError,key);}
   var code=response.getResponseCode();
-  if(code===503)throw diagnosticError_('HTTP_503','Gemini 서비스가 일시적으로 요청을 처리하지 못했습니다 (HTTP 503). '+(attempt===2?'자동 재시도 2회 후에도 응답하지 않습니다. ':'')+'잠시 후 같은 모델로 다시 시도하세요. 키의 유효성은 이 오류만으로 판단할 수 없습니다. 입력과 원본 자료는 유지됩니다.');
+  if(code===503)throw diagnosticError_('HTTP_503','Gemini 서비스가 요청을 처리하지 못했습니다 (HTTP 503). 실행 시간 초과를 피하기 위해 자동 재시도하지 않습니다. 등록 키·모델 조회에서 사용 가능한 모델을 확인한 뒤 한 단계씩 다시 점검하세요. 이 오류로 키 유효성을 판단할 수는 없습니다.');
   if(code!==200){var help=code===429?'사용량 한도·결제·재시도 가능 시간을 확인하세요.':code===401||code===403?'API 키의 유효성과 Gemini API 접근 권한을 확인하세요.':code===404?'계정에서 사용 가능한 모델인지 확인하세요.':'API 키·모델·요청 형식을 확인하세요.';throw diagnosticError_('HTTP_'+code,'Gemini 요청에 실패했습니다 (HTTP '+code+'). '+help+' 입력과 원본 자료는 유지됩니다.');}
   var body;try{body=JSON.parse(response.getContentText());}catch(invalidBody){throw diagnosticError_('INVALID_RESPONSE','인식 서버 응답을 읽을 수 없습니다. 다시 시도하세요.');}
   var candidate=body&&body.candidates&&body.candidates[0];var text=candidate&&candidate.content&&candidate.content.parts?candidate.content.parts.map(function(part){return part.text||'';}).join(''):'';
@@ -166,7 +163,8 @@ function requestGeminiJson_(parts,schema) {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw diagnosticError_('INVALID_RESPONSE','인식 결과가 JSON 객체가 아닙니다. 다시 시도하세요.');
   return raw;
 }
-function checkGeminiConnection() {
+function checkGeminiConnection(){return recordedDiagnostic_('api_generation',checkGeminiConnection_);}
+function checkGeminiConnection_() {
   var model=PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL')||'gemini-flash-latest';
   try {
     var raw=requestGeminiJson_([{text:'This is a connection test for a private auction journal. Return only {"status":"madang_connection_ok"}.'}],{type:'OBJECT',properties:{status:{type:'STRING',enum:['madang_connection_ok']}},required:['status']});
@@ -174,7 +172,7 @@ function checkGeminiConnection() {
     return {mode:'live',ok:true,status:'CONNECTED',model:model,message:'Gemini API에 실제 연결했고 점검 응답을 확인했습니다. Google 시트 권한은 별도입니다.'};
   } catch(error) {
     var failed={mode:'live',ok:false,status:error.diagnosticCode||'CHECK_FAILED',model:model,message:error.diagnosticCode?error.message:'연결 점검에 실패했습니다. Google 외부 요청 권한과 API 설정을 확인하세요.'};
-    if(error.transportFailure){failed.safeDetail=error.safeDetail;if(['EXTERNAL_REQUEST_PERMISSION','URLFETCH_QUOTA'].indexOf(error.diagnosticCode)<0){failed.metadataProbe=probeGeminiMetadata_();failed.message+=' '+failed.metadataProbe.message;}}
+    if(error.transportFailure){failed.safeDetail=error.safeDetail;}
     return failed;
   }
 }
@@ -186,7 +184,8 @@ function samplePdfDocument_() {
   pdf+='xref\n0 '+(objects.length+1)+'\n0000000000 65535 f \n';offsets.slice(1).forEach(function(offset){pdf+=('0000000000'+offset).slice(-10)+' 00000 n \n';});pdf+='trailer\n<< /Size '+(objects.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n';
   return {name:'madang-synthetic-check.pdf',mimeType:'application/pdf',documentType:'기타',dataUrl:'data:application/pdf;base64,'+Utilities.base64Encode(pdf)};
 }
-function runSampleCheck() {
+function runSampleCheck(){return recordedDiagnostic_('pdf_generation',runSampleCheck_);}
+function runSampleCheck_() {
   var expected={court:'Seoul Central District Court',caseNumber:'2030-TEST-42',itemNumber:'1',auctionDate:'2030-10-22',appraisal:200000000,minimumPrice:140000000};
   try {
     var extracted=extractDocuments([samplePdfDocument_()]);var normalized=normalizeFields_(extracted.fields,false);var checks=['caseNumber','itemNumber','auctionDate','appraisal','minimumPrice'].map(function(key){return {field:key,expected:expected[key],actual:normalized[key],passed:normalized[key]===expected[key]};});
