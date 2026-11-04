@@ -1,4 +1,4 @@
-name: Journal checks
+name: Madang checks
 on: [push, pull_request]
 permissions:
   contents: read
@@ -10,7 +10,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node tools/build_web.cjs
-      - name: Check that the standalone HTML matches its sources
-        run: git diff --exit-code -- index.html
-      - run: node --test tests/*.test.cjs
+          cache: npm
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://test.supabase.co
+          VITE_SUPABASE_ANON_KEY: synthetic-public-key-not-a-real-credential
+          GEMINI_API_KEY: MADANG_SYNTHETIC_SERVER_BUILD_SENTINEL
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+        env:
+          PLAYWRIGHT_PRODUCTION: '1'

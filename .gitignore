@@ -6,3 +6,9 @@ __pycache__/
 .env.*
 .clasp.json
 .clasprc.json
+node_modules/
+dist/
+.vercel/
+playwright-report/
+test-results/
+!.env.example
