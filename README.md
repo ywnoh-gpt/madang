@@ -6,6 +6,8 @@
 
 [물건 목록 화면](docs/images/react-records.png) · [수익 시뮬레이터 화면](docs/images/react-simulator.png) · [모바일 화면](docs/images/react-mobile.png)
 
+처음 실행하는 경우 **[처음 한 번만 하는 연결 안내](docs/quick-start.md)**부터 진행하세요. GitHub에 연결할 외부 서비스는 Supabase와 Vercel이며, 필수 환경변수는 3개입니다.
+
 ## 구현한 기능
 
 - 이메일·비밀번호 가입/로그인, 이메일 확인, 비밀번호 재설정, 로그아웃. 같은 계정으로 PC·모바일에서 기록 조회.
@@ -44,14 +46,14 @@ npm run dev
 
 Vite 화면 주소는 `http://localhost:5173`입니다. **Vite 단독 실행은 /api/analyze를 실행하지 않습니다.** 로컬에서 AI까지 실행하려면 [Vercel CLI](https://vercel.com/docs/cli)를 설치하고 `vercel link`, `vercel env pull .env.local` 후 `vercel dev`를 사용하세요. Vercel 프로젝트 프레임워크는 Vite로 선택합니다. 브라우저 테스트는 로컬 `/api/analyze`를 테스트 대역으로 교체합니다.
 
-| 환경변수                 | 설정 위치                      | 용도                                          |
-| ------------------------ | ------------------------------ | --------------------------------------------- |
-| `VITE_SUPABASE_URL`      | Vercel 빌드 / .env.local       | 공개 프로젝트 URL                             |
-| `VITE_SUPABASE_ANON_KEY` | Vercel 빌드 / .env.local       | 공개 publishable/anon 키                      |
-| `SUPABASE_URL`           | Vercel 서버 / .env.local       | 같은 프로젝트 URL                             |
-| `SUPABASE_ANON_KEY`      | Vercel 서버 / .env.local       | 같은 프로젝트 공개 키, 사용자 JWT와 함께 사용 |
-| `GEMINI_API_KEY`         | **Vercel 서버만** / .env.local | Gemini 비밀 키                                |
-| `GEMINI_MODEL`           | Vercel 서버 / .env.local       | 기본 `gemini-flash-lite-latest`               |
+| 환경변수                 | 설정 위치                      | 용도                            |
+| ------------------------ | ------------------------------ | ------------------------------- |
+| `VITE_SUPABASE_URL`      | Vercel 빌드 / .env.local       | 공개 프로젝트 URL               |
+| `VITE_SUPABASE_ANON_KEY` | Vercel 빌드 / .env.local       | 공개 publishable/anon 키        |
+| `GEMINI_API_KEY`         | **Vercel 서버만** / .env.local | Gemini 비밀 키                  |
+| `GEMINI_MODEL` (선택)    | Vercel 서버 / .env.local       | 기본 `gemini-flash-lite-latest` |
+
+서버는 `VITE_SUPABASE_URL`과 `VITE_SUPABASE_ANON_KEY`를 재사용합니다. 기존 배포에서 별도 `SUPABASE_URL`·`SUPABASE_ANON_KEY`를 모두 설정했다면 그 쌍을 우선 사용하므로 이전 설정도 유지됩니다. 일부 값만 있는 서로 다른 쌍을 섞어 쓰지 않습니다.
 
 실제 키를 GitHub·이슈·채팅·코드에 붙이지 마세요. `.env*`와 `.vercel/`은 Git에서 제외되며 `.env.example`만 공개 예제입니다. Gemini 키에 `VITE_` 접두사를 붙이면 안 됩니다. 브라우저 번들에는 Gemini 키·모델 호출 코드가 들어가지 않습니다. 기존 Apps Script에 등록한 키를 자동으로 가져오지 않습니다.
 
@@ -59,10 +61,10 @@ Vite 화면 주소는 `http://localhost:5173`입니다. **Vite 단독 실행은 
 
 이 버전은 **GitHub Pages에 배포하지 않습니다.** Pages는 Vercel Functions를 실행할 수 없습니다. 이전 Pages 404의 실제 설정은 이 환경에서 조회하지 못했으며, 새 앱의 실행 주소는 Vercel에서 발급합니다.
 
-1. 이 변경 브랜치 `feat/react-supabase-auction`을 검토 후 `main`으로 병합합니다. 기존 코드·개인 데이터는 Git 이력·기존 서비스에 남습니다. [변경 비교](https://github.com/ywnoh-gpt/madang/compare/main...feat/react-supabase-auction).
-2. [Vercel 새 프로젝트](https://vercel.com/new)에서 GitHub 저장소 **`ywnoh-gpt/madang`**를 Import합니다.
+1. [GitHub 저장소의 `main` 브랜치](https://github.com/ywnoh-gpt/madang/tree/main)를 배포 대상으로 사용합니다. 코드 수정·자동 검사는 GitHub에서 관리하고, Vercel Git 연동 후 `main`의 변경은 자동 배포됩니다. 기존 코드·개인 데이터는 Git 이력·기존 서비스에 남습니다.
+2. [Vercel 새 프로젝트](https://vercel.com/new)에서 GitHub 저장소 **`ywnoh-gpt/madang`**, Production Branch **`main`**을 Import합니다.
 3. Framework **Vite**, Root Directory **저장소 루트(`./`)**, Build Command **`npm run build`**, Output Directory **`dist`**, Node **22.x 이상**으로 설정합니다. `apps-script`나 `web` 폴더를 루트로 선택하지 마세요.
-4. 위 환경변수를 Production과 테스트할 Preview 환경에 등록하고 Deploy합니다. `main` 병합 전 브랜치 배포를 검토하려면 Vercel Git 설정/새 배포의 Git ref에서 `feat/react-supabase-auction`을 선택합니다.
+4. 위 필수 환경변수 3개를 Production과 테스트할 Preview 환경에 등록하고 Deploy합니다. 기능 브랜치를 따로 검토할 때만 Vercel Git 설정/새 배포의 Git ref에서 해당 브랜치를 선택합니다.
 5. 발급된 `https://...vercel.app` 주소를 Supabase Auth URL 설정에 등록합니다.
 6. 로그인 → 직접 기록 저장/조회 → PDF 기본정보 추출 → 점유·임차/거래 검토 → 시뮬레이터 저장을 확인합니다. **실제 AI 성공은 이 배포에서 확인해야 합니다.**
 7. 프런트 공개 환경변수를 바꾼 경우 새 빌드·재배포가 필요합니다. `/api/analyze`가 404라면 Vercel 배포 여부, Root Directory, `api/analyze.ts` 포함 여부와 Functions 목록을 확인합니다. 로그인 API 401/403은 Supabase URL·공개 키·메일 인증을 확인합니다.

@@ -2,20 +2,15 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { assertFile, prompt, responseSchema, validateExtraction } from './extraction.js';
+import { supabaseConfig } from './config.js';
+import { ApiError } from './errors.js';
+export { ApiError } from './errors.js';
 const requestSchema = z
   .object({
     mode: z.enum(['auction', 'tenancy', 'transactions']),
     documentIds: z.array(z.string().uuid()).min(1).max(3),
   })
   .strict();
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 export interface Dependencies {
   client: (token: string) => SupabaseClient;
   generate: (
@@ -122,9 +117,7 @@ export function createHandler(deps: Dependencies) {
 }
 export const productionDependencies: Dependencies = {
   client(token) {
-    const url = process.env.SUPABASE_URL,
-      key = process.env.SUPABASE_ANON_KEY;
-    if (!url || !key) throw new ApiError(503, '서버 Supabase 설정이 필요합니다.');
+    const { url, key } = supabaseConfig();
     return createClient(url, key, {
       global: { headers: { Authorization: 'Bearer ' + token } },
       auth: { persistSession: false, autoRefreshToken: false },

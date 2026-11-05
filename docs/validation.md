@@ -6,7 +6,7 @@
 
 | 검증                                    | 결과            | 실제·모의 범위                                                              |
 | --------------------------------------- | --------------- | --------------------------------------------------------------------------- |
-| `npm run test`                          | 22개 통과       | 계산·CSV·서버 인증/권한/형식/오류 경계, PostgreSQL SQL 검증                 |
+| `npm run test`                          | 25개 통과       | 계산·CSV·서버 인증/권한/형식/오류 경계, PostgreSQL SQL 검증                 |
 | PostgreSQL 마이그레이션·RLS·트리거      | 6개 테스트 통과 | PGlite의 실제 PostgreSQL 엔진. Auth/Storage 스키마 경계는 테스트용으로 준비 |
 | Chromium 사용 흐름                      | 4개 통과        | 실제 React·Supabase SDK·브라우저. Supabase HTTP와 AI 응답은 테스트 대역     |
 | 배포용 빌드의 Chromium 흐름             | 4개 통과        | Vite production assets·지연 로딩·동일 사용 흐름. 외부 서비스는 모의         |
@@ -42,3 +42,7 @@ README에 따라 Supabase에 마이그레이션을 적용하고 Vercel 환경변
 이전 Pages 404의 원격 설정은 확인하지 못했습니다. 새 앱은 GitHub Pages의 정적 배포 대상이 아니며 Vercel에서 실행합니다. 실제 배포 URL이나 기존 사용자 데이터는 생성·변경하지 않았습니다.
 
 이전 검증 기록은 [전환 전 커밋](https://github.com/ywnoh-gpt/madang/blob/b671e28ec1105be3da9b88a5cea03fce0d6a828d/docs/validation.md)에 보존되어 있습니다.
+
+## 최초 연결 간소화 검증
+
+서버가 프런트의 Supabase 공개 설정을 재사용하는 경우, 기존 서버 전용 설정 쌍을 우선하는 경우, 불완전한 설정을 거부하는 경우의 테스트 3개를 추가했습니다. 초기 필수 환경변수는 Supabase 주소·공개 키·Gemini 키 3개입니다. 25개 테스트와 비밀키 혼입 검사를 포함한 빌드를 통과했습니다. 실제 외부 계정 연결과 배포는 실행하지 않았습니다.
