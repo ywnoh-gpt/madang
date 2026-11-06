@@ -43,10 +43,14 @@ Supabase 주소·공개 키는 화면과 서버가 함께 사용하므로 두 �
 
 ### 가입할 때 Invalid path specified in request URL이 나오는 경우
 
-이는 계정 개수나 비밀번호 복잡도보다는 인증 요청 주소를 먼저 확인해야 하는 오류입니다. 예를 들어 `VITE_SUPABASE_URL`에 `/rest/v1`이 있으면 라이브러리는 `/rest/v1/auth/v1/signup`으로 요청합니다. 실제 원인은 등록된 값과 응답을 확인해야 확정할 수 있습니다.
+이는 계정 개수나 비밀번호 복잡도보다는 인증 요청 주소를 먼저 확인해야 하는 오류입니다. 예전 코드에서는 `VITE_SUPABASE_URL`에 `/rest/v1`이 있으면 라이브러리가 `/rest/v1/auth/v1/signup`으로 요청했습니다.
+
+**현재 버전은 표준 Supabase 프로젝트 주소 끝의 `/rest/v1/`, `/auth/v1/`, `/storage/v1/`을 자동 정리합니다.** 이 경우 기존 Vercel 값을 직접 바꿀 필요 없이 최신 코드의 자동 배포가 완료된 뒤 마당 페이지를 새로고침하면 됩니다. 프로젝트 호스트는 바꾸지 않고 화면과 서버가 같은 기본 주소를 사용합니다.
+
+관리 화면·다른 서비스 주소·알 수 없는 경로는 자동으로 추측하지 않습니다. 그런 경우나 값을 직접 정리하고 싶을 때만 아래 방법을 사용하세요.
 
 1. Supabase 프로젝트의 **Connect 또는 API 설정 → Project URL**을 복사합니다. 형식은 `https://프로젝트ID.supabase.co`입니다.
-2. Vercel 프로젝트의 **Settings → Environment Variables → `VITE_SUPABASE_URL`**에 넣습니다. Supabase 관리 페이지 주소, Vercel 웹주소, `/auth/v1`, `/rest/v1`, `/storage/v1` 등이 붙은 주소는 사용하지 않습니다.
+2. Vercel 프로젝트의 **Settings → Environment Variables → `VITE_SUPABASE_URL`**에 넣습니다. Supabase 관리 페이지 주소나 Vercel 웹주소를 넣지 않습니다. 기본 Project URL을 권장하며, 표준 프로젝트의 위 서비스 기본 경로는 자동 정리됩니다.
 3. `VITE_SUPABASE_ANON_KEY`에는 같은 프로젝트의 **publishable 또는 anon 공개 키**를 넣습니다. `sb_secret_` 및 `service_role` 키는 화면용 키가 아닙니다.
 4. 값을 바꾼 뒤 **Deployments → 최근 배포의 ⋯ → Redeploy**를 누르고, 새 배포가 Ready가 되면 새로고침합니다. 공개 환경변수는 빌드할 때 적용되므로 저장만 하면 기존 화면이 갱신되지는 않습니다.
 

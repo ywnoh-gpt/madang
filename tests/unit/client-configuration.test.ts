@@ -7,13 +7,25 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('browser connection initialization', () => {
-  it('never initializes an auth client for a path-bearing project URL', async () => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://project.supabase.co/rest/v1');
+  it('never initializes an auth client for an unknown project URL path', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://project.supabase.co/other');
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'synthetic-public-key');
     const data = await import('../../src/lib/data');
     expect(data.supabase).toBeNull();
     expect(data.connection.ok).toBe(false);
     expect(createClient).not.toHaveBeenCalled();
+  });
+  it('initializes the client from a copied REST base without requiring a settings change', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://synthetic-project.supabase.co/rest/v1/');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'synthetic-public-key');
+    const data = await import('../../src/lib/data');
+    expect(data.supabase).toBeTruthy();
+    expect(data.connection.ok).toBe(true);
+    expect(createClient).toHaveBeenCalledWith(
+      'https://synthetic-project.supabase.co',
+      'synthetic-public-key',
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } },
+    );
   });
   it('never initializes a browser client with a secret key', async () => {
     vi.stubEnv('VITE_SUPABASE_URL', 'https://project.supabase.co');

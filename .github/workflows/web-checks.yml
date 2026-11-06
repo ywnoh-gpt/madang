@@ -15,7 +15,7 @@ jobs:
       - run: npm run test
       - run: npm run build
         env:
-          VITE_SUPABASE_URL: https://test.supabase.co
+          VITE_SUPABASE_URL: https://test.supabase.co/rest/v1/
           VITE_SUPABASE_ANON_KEY: synthetic-public-key-not-a-real-credential
           GEMINI_API_KEY: MADANG_SYNTHETIC_SERVER_BUILD_SENTINEL
       - run: npx playwright install --with-deps chromium

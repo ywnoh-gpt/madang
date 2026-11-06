@@ -452,3 +452,41 @@ test('signup path errors explain the configuration fix and preserve the typed em
   expect(state.apiCalls).toBe(0);
   expect(state.googleCalls).toBe(0);
 });
+
+test('signup reaches the root auth endpoint when the deployed project URL includes a REST base', async ({
+  page,
+}) => {
+  const state = await setup(page, { skipLogin: true });
+  const paths: string[] = [];
+  await page.route('**/auth/v1/signup*', async (route) => {
+    if (route.request().method() === 'OPTIONS')
+      return route.fulfill({
+        status: 204,
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-allow-headers': '*',
+          'access-control-allow-methods': '*',
+        },
+      });
+    paths.push(new URL(route.request().url()).pathname);
+    await route.fulfill({
+      status: 200,
+      json: {
+        id: uid,
+        email: 'synthetic@example.test',
+        aud: 'authenticated',
+        role: 'authenticated',
+        created_at: '2026-01-01T00:00:00Z',
+      },
+      headers: { 'access-control-allow-origin': '*' },
+    });
+  });
+  await page.getByRole('button', { name: '처음 한 번 계정 만들기', exact: true }).click();
+  await page.getByLabel('이메일', { exact: true }).fill('synthetic@example.test');
+  await page.getByLabel('비밀번호', { exact: true }).fill('synthetic-password');
+  await page.getByRole('button', { name: '계정 만들기', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('확인 메일');
+  expect(paths).toEqual(['/auth/v1/signup']);
+  expect(state.apiCalls).toBe(0);
+  expect(state.googleCalls).toBe(0);
+});

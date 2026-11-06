@@ -54,7 +54,13 @@ export function validateConnection(rawUrl: unknown, rawKey: unknown): PublicConn
           message:
             '관리 화면·배포 주소·Storage 주소가 아닌 Supabase Project URL을 입력하세요. 예: https://프로젝트ID.supabase.co',
         });
-      } else if (parsed.pathname !== '/') {
+      } else if (
+        parsed.pathname !== '/' &&
+        !(
+          /^[a-z0-9-]+\.supabase\.co$/.test(parsed.hostname) &&
+          /^\/(?:rest|auth|storage)\/v1\/?$/.test(parsed.pathname)
+        )
+      ) {
         issues.push({
           field: 'url',
           message:
@@ -86,6 +92,9 @@ export function validateConnection(rawUrl: unknown, rawKey: unknown): PublicConn
       message: '공개 키 값만 입력하세요. URL·따옴표·설정 이름은 넣지 마세요.',
     });
   }
+  // A standard hosted Supabase service base (e.g. /rest/v1/) is an unambiguous
+  // copy/paste variant of the same project origin. SDKs append their own paths,
+  // so return the origin for both browser and server. Unknown paths stay blocked.
   return issues.length || !parsed ? { ok: false, issues } : { ok: true, url: parsed.origin, key };
 }
 
