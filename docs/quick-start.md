@@ -34,3 +34,20 @@ Supabase 주소·공개 키는 화면과 서버가 함께 사용하므로 두 �
 처음에는 수동 기록 저장을 확인하고, 그다음 캡처/PDF 분석을 한 번 확인하세요. 실제 서비스 연결 전의 자동 테스트는 Google·Supabase 실사용 연결 성공을 의미하지 않습니다.
 
 지금 GitHub Pages의 주소는 이 앱의 실행 주소로 사용하지 않습니다. 로그인·파일·AI 서버가 포함된 현재 버전은 Vercel 주소로 접속합니다. 자세한 개발 설정은 [README](../README.md)에 있습니다.
+
+## 개인용으로 사용하기
+
+본인 계정 하나로 사용하는 기록장입니다. 로그인은 공개 웹주소를 통해 개인 기록과 AI 사용에 접근하기 위한 본인 확인입니다. 같은 브라우저에서는 세션을 기억하고 갱신하며, 로그아웃·브라우저 데이터 삭제·세션 정책에 따라 다시 확인할 수 있습니다. 브라우저에서 로그인을 생략하기 위해 RLS를 해제하거나 비밀 키를 넣으면 안 됩니다.
+
+본인 계정을 만들고 로그인을 확인한 뒤에는 Supabase Authentication의 **Allow new users to sign up** 설정을 끄면 새 계정 생성을 막을 수 있습니다. 이미 만든 본인 계정으로 로그인하고 비밀번호를 재설정할 수 있습니다. 처음 연결하기 전에는 계정부터 준비하세요.
+
+### 가입할 때 Invalid path specified in request URL이 나오는 경우
+
+이는 계정 개수나 비밀번호 복잡도보다는 인증 요청 주소를 먼저 확인해야 하는 오류입니다. 예를 들어 `VITE_SUPABASE_URL`에 `/rest/v1`이 있으면 라이브러리는 `/rest/v1/auth/v1/signup`으로 요청합니다. 실제 원인은 등록된 값과 응답을 확인해야 확정할 수 있습니다.
+
+1. Supabase 프로젝트의 **Connect 또는 API 설정 → Project URL**을 복사합니다. 형식은 `https://프로젝트ID.supabase.co`입니다.
+2. Vercel 프로젝트의 **Settings → Environment Variables → `VITE_SUPABASE_URL`**에 넣습니다. Supabase 관리 페이지 주소, Vercel 웹주소, `/auth/v1`, `/rest/v1`, `/storage/v1` 등이 붙은 주소는 사용하지 않습니다.
+3. `VITE_SUPABASE_ANON_KEY`에는 같은 프로젝트의 **publishable 또는 anon 공개 키**를 넣습니다. `sb_secret_` 및 `service_role` 키는 화면용 키가 아닙니다.
+4. 값을 바꾼 뒤 **Deployments → 최근 배포의 ⋯ → Redeploy**를 누르고, 새 배포가 Ready가 되면 새로고침합니다. 공개 환경변수는 빌드할 때 적용되므로 저장만 하면 기존 화면이 갱신되지는 않습니다.
+
+앱은 알려진 잘못된 주소·경로·키 형식을 가입 전에 안내합니다. 형식 검사를 통과해도 실제 프로젝트 활성 상태와 공개 키의 유효성까지 확인한 것은 아닙니다. 문제를 공유할 때는 Project URL만 전달하고 키·비밀번호는 보내지 않습니다.

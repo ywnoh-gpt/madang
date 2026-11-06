@@ -10,9 +10,16 @@ import {
 } from '../domain/journal';
 import type { SimulationInput } from '../domain/simulator';
 import { simulate } from '../domain/simulator';
-const url = import.meta.env.VITE_SUPABASE_URL,
-  key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-export const supabase = url && key && !url.includes('YOUR_PROJECT') ? createClient(url, key) : null;
+import { validateConnection } from '../domain/connection';
+export const connection = validateConnection(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY,
+);
+export const supabase = connection.ok
+  ? createClient(connection.url, connection.key, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    })
+  : null;
 export function db() {
   if (!supabase) throw new Error('Supabase 환경변수를 먼저 설정하세요.');
   return supabase;

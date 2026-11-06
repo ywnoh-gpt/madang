@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 const uid = '11111111-1111-4111-8111-111111111111';
-async function setup(page: Page) {
+async function setup(page: Page, options: { skipLogin?: boolean } = {}) {
   const state: {
     records: any[];
     documents: any[];
@@ -262,6 +262,7 @@ async function setup(page: Page) {
     await route.fulfill({ json: { analysis } });
   });
   await page.goto('/');
+  if (options.skipLogin) return state;
   await page.getByLabel('이메일', { exact: true }).fill('synthetic@example.test');
   await page.getByLabel('비밀번호', { exact: true }).fill('synthetic-password');
   await page.getByRole('button', { name: '로그인', exact: true }).click();
@@ -418,5 +419,36 @@ test('AI service failure preserves input and originals without an automatic retr
   await expect(page.getByRole('button', { name: 'AI로 내용 읽기', exact: true })).toBeEnabled();
   expect(calls).toBe(1);
   expect(state.documents).toHaveLength(1);
+  expect(state.googleCalls).toBe(0);
+});
+
+test('signup path errors explain the configuration fix and preserve the typed email', async ({
+  page,
+}) => {
+  const state = await setup(page, { skipLogin: true });
+  await page.route('**/auth/v1/signup*', async (route) => {
+    if (route.request().method() === 'OPTIONS')
+      return route.fulfill({
+        status: 204,
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-allow-headers': '*',
+          'access-control-allow-methods': '*',
+        },
+      });
+    return route.fulfill({
+      status: 404,
+      json: { message: 'Invalid path specified in request URL' },
+      headers: { 'access-control-allow-origin': '*' },
+    });
+  });
+  await page.getByRole('button', { name: '처음 한 번 계정 만들기', exact: true }).click();
+  await page.getByLabel('이메일', { exact: true }).fill('synthetic@example.test');
+  await page.getByLabel('비밀번호', { exact: true }).fill('synthetic-password');
+  await page.getByRole('button', { name: '계정 만들기', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('VITE_SUPABASE_URL');
+  await expect(page.getByRole('status')).toContainText('Redeploy');
+  await expect(page.getByLabel('이메일', { exact: true })).toHaveValue('synthetic@example.test');
+  expect(state.apiCalls).toBe(0);
   expect(state.googleCalls).toBe(0);
 });

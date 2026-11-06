@@ -13,6 +13,7 @@ import {
 } from './domain/journal';
 import { JournalForm } from './components/JournalForm';
 import { PropertyView } from './components/PropertyView';
+import { authErrorText } from './domain/connection';
 function download(data: string, type: string, name: string) {
   const url = URL.createObjectURL(new Blob([data], { type })),
     a = document.createElement('a');
@@ -45,7 +46,7 @@ function Auth() {
           : '로그인했습니다.',
       );
     } catch (e) {
-      setMessage(errorText(e));
+      setMessage(authErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -58,8 +59,10 @@ function Auth() {
         <p>연습을 기록하고, 판단을 다듬는 공간</p>
       </div>
       <form className="panel" onSubmit={submit}>
-        <h2>{signup ? '나의 기록장 만들기' : '내 기록장 로그인'}</h2>
-        <p className="hint">PC와 모바일에서 같은 계정의 기록을 확인합니다.</p>
+        <h2>{signup ? '처음 연결할 본인 계정' : '내 기록장 로그인'}</h2>
+        <p className="hint">
+          개인 기록을 보호하기 위한 본인 확인입니다. 이 브라우저에서 로그인 상태를 기억합니다.
+        </p>
         <label className="field">
           이메일
           <input
@@ -85,8 +88,15 @@ function Auth() {
           <button className="primary" disabled={busy}>
             {busy ? '확인 중…' : signup ? '계정 만들기' : '로그인'}
           </button>
-          <button type="button" onClick={() => setSignup((v) => !v)}>
-            {signup ? '로그인으로' : '회원가입'}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setSignup((v) => !v);
+              setMessage('');
+            }}
+          >
+            {signup ? '로그인으로' : '처음 한 번 계정 만들기'}
           </button>
           <button
             type="button"
@@ -102,7 +112,7 @@ function Auth() {
                   '비밀번호 재설정 메일을 확인하세요. 링크를 열면 설정에서 새 비밀번호를 저장할 수 있습니다.',
                 );
               } catch (e) {
-                setMessage(errorText(e));
+                setMessage(authErrorText(e));
               } finally {
                 setBusy(false);
               }
@@ -544,7 +554,7 @@ export default function App() {
     let active = true;
     client.auth.getSession().then(({ data, error }) => {
       if (active) {
-        if (error) setError(error.message);
+        if (error) setError(authErrorText(error));
         setSession(data.session);
         setReady(true);
       }
@@ -569,12 +579,23 @@ export default function App() {
         </div>
         <section className="panel">
           <h2>서비스 연결 설정이 필요합니다</h2>
+          {!Data.connection.ok && (
+            <ul role="alert">
+              {Data.connection.issues.map((issue, i) => (
+                <li key={i}>{issue.message}</li>
+              ))}
+            </ul>
+          )}
           <p>
-            Vercel에 Supabase 공개 URL·공개 키와 서버용 Gemini 키를 설정하고 DB 마이그레이션을
-            적용하세요.
+            Supabase 프로젝트의 Connect 또는 API 설정에서 <b>Project URL</b>과 공개 키를 확인하세요.
+          </p>
+          <p className="hint">
+            Vercel → madang → Settings → Environment Variables의 <code>VITE_SUPABASE_URL</code>과{' '}
+            <code>VITE_SUPABASE_ANON_KEY</code>를 수정한 뒤 <b>Redeploy</b>하고 새로고침합니다. 주소
+            형식 검사는 실제 연결·키 유효성 검증과 별개입니다.
           </p>
           <a
-            href="https://github.com/ywnoh-gpt/madang/blob/feat/react-supabase-auction/README.md"
+            href="https://github.com/ywnoh-gpt/madang/blob/main/docs/quick-start.md"
             target="_blank"
             rel="noopener noreferrer"
           >
