@@ -85,7 +85,7 @@ export function createHandler(deps: Dependencies) {
       const generated = await deps.generate(mode, docs);
       let result;
       try {
-        result = validateExtraction(generated.raw, documentIds);
+        result = validateExtraction(generated.raw, documentIds, mode);
       } catch {
         throw new ApiError(
           502,

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { validateExtraction } from '../../server/extraction';
 const uid = '11111111-1111-4111-8111-111111111111';
 async function setup(page: Page, options: { skipLogin?: boolean } = {}) {
   const state: {
@@ -180,7 +181,8 @@ async function setup(page: Page, options: { skipLogin?: boolean } = {}) {
               court: '서울중앙지방법원',
               caseNumber: '2026타경456',
               itemNumber: '1',
-              address: '서울 합성주소 123',
+              address: '경기도 가상시 예시동 123-45',
+              propertyType: '도시형생활주택',
               area: '59.9',
               auctionDate: '2026-10-01',
               appraisal: '2억',
@@ -198,6 +200,26 @@ async function setup(page: Page, options: { skipLogin?: boolean } = {}) {
           quote: '최저매각가격 1억 2300만원',
           needsReview: true,
         },
+        ...(body.mode === 'auction'
+          ? [
+              {
+                field: 'addressBase',
+                value: '경기도 가상시 예시동 123-45',
+                quote: '경기도 가상시 예시동 123-45',
+                documentId: id,
+                page: 1,
+                needsReview: false,
+              },
+              {
+                field: 'addressTitle',
+                value: '경기도 가상시 예시동 123-45 예시타운 2층203호',
+                quote: '경기도 가상시 예시동 123-45 예시타운 2층203호',
+                documentId: id,
+                page: 1,
+                needsReview: false,
+              },
+            ]
+          : []),
       ],
       tenants:
         body.mode === 'tenancy'
@@ -226,7 +248,7 @@ async function setup(page: Page, options: { skipLogin?: boolean } = {}) {
                 contractDate: '2026-09-10',
                 floor: '3',
                 area: '59.9',
-                address: '서울 합성주소 123',
+                address: '경기도 가상시 예시동 123-45',
                 buildingName: null,
                 cancelled: false,
                 documentId: id,
@@ -239,7 +261,7 @@ async function setup(page: Page, options: { skipLogin?: boolean } = {}) {
                 contractDate: '2026-09-11',
                 floor: '5',
                 area: '84',
-                address: '서울 합성주소 123',
+                address: '경기도 가상시 예시동 123-45',
                 buildingName: null,
                 cancelled: false,
                 documentId: id,
@@ -254,7 +276,7 @@ async function setup(page: Page, options: { skipLogin?: boolean } = {}) {
     const analysis = {
       id: randomUUID(),
       mode: body.mode,
-      result: raw,
+      result: validateExtraction(raw, body.documentIds, body.mode),
       document_ids: body.documentIds,
       created_at: new Date().toISOString(),
     };
@@ -324,9 +346,13 @@ test('upload, server-only extraction, human correction, tenancy, area-separated 
     .setInputFiles('samples/synthetic-auction.pdf');
   await page.getByRole('button', { name: 'AI로 내용 읽기', exact: true }).click();
   await expect(page.locator('#caseNumber')).toHaveValue('2026타경456');
+  await expect(page.locator('#address')).toHaveValue(
+    '경기도 가상시 예시동 123-45 예시타운 2층203호',
+  );
   await expect(page.locator('#predictedPrice')).toHaveValue('105000000');
   await page.locator('#minimumPrice').fill('90000000');
   await save(page);
+  expect(state.records[0].fields.address).toBe('경기도 가상시 예시동 123-45 예시타운 2층203호');
   await page.getByRole('button', { name: '상세·분석', exact: true }).click();
   await page.getByRole('button', { name: '점유·임차', exact: true }).click();
   await page
