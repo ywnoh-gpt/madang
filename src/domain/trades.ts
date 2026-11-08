@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { amount, type Trade, type TradeDraft } from './journal';
+import { parseArea } from './area';
 export function reviewTrade(row: TradeDraft, recordId: string): Trade {
   const price = amount(row.price, '거래금액');
   if (!price || price <= 0) throw new Error('거래금액을 확인하세요.');
@@ -11,8 +11,7 @@ export function reviewTrade(row: TradeDraft, recordId: string): Trade {
     parsed.toISOString().slice(0, 10) !== date
   )
     throw new Error('계약일을 YYYY-MM-DD로 확인하세요.');
-  const area = row.area == null || row.area === '' ? null : Number(row.area);
-  if (area !== null) z.number().positive().parse(area);
+  const area = parseArea(row.area);
   return {
     record_id: recordId,
     price,

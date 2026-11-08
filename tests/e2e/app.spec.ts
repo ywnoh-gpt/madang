@@ -490,3 +490,21 @@ test('signup reaches the root auth endpoint when the deployed project URL includ
   expect(state.apiCalls).toBe(0);
   expect(state.googleCalls).toBe(0);
 });
+
+test('building area text saves as a number and ambiguous input stays editable', async ({
+  page,
+}) => {
+  const state = await setup(page);
+  await fillNew(page);
+  await page.locator('#area').fill('건물 48.72㎡ / 토지 20㎡');
+  await page.getByLabel('결과 확인 전에 작성한 예측입니다.').check();
+  await page.getByLabel('원본과 입력값을 대조했습니다.').check();
+  await page.getByRole('button', { name: '기록 저장하기', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('면적을 확인');
+  await expect(page.locator('#area')).toHaveValue('건물 48.72㎡ / 토지 20㎡');
+  expect(state.records).toHaveLength(0);
+  await page.locator('#area').fill('건물 48.72㎡');
+  await save(page);
+  expect(state.records).toHaveLength(1);
+  expect(state.records[0].fields.area).toBe(48.72);
+});

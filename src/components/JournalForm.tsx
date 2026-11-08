@@ -64,7 +64,8 @@ export function Field({
         <input
           {...props}
           type={field.endsWith('Date') ? 'date' : field.endsWith('Url') ? 'url' : 'text'}
-          inputMode={moneyKeys.includes(field) ? 'decimal' : undefined}
+          inputMode={moneyKeys.includes(field) || field === 'area' ? 'decimal' : undefined}
+          placeholder={field === 'area' ? '예: 48.72 또는 건물 48.72㎡' : undefined}
           maxLength={2000}
           title={
             field === 'itemNumber' ? '같은 사건 안에서 물건을 구분하는 번호입니다.' : undefined

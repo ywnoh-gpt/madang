@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import { z } from 'zod';
+import { parseArea } from './area';
 
 export const labels = {
   court: '법원',
@@ -223,8 +224,7 @@ export function normalize(input: Record<string, unknown>, required = true): Jour
     r[key] = amount(input[key], labels[key as FieldKey]);
     if (Number(r[key]) > 1000000) throw new Error('횟수·입찰자 수를 확인하세요.');
   }
-  r.area =
-    input.area == null || input.area === '' ? null : Number(String(input.area).replace(/,/g, ''));
+  r.area = parseArea(input.area);
   r.saleResult = !r.saleResult || r.saleResult === 'UNKNOWN' ? '미확인' : r.saleResult;
   r.beforeResultConfirmed = input.beforeResultConfirmed === true;
   const result = journalSchema.parse(r);
